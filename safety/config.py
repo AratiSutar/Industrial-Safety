@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 MODES = ("GATE", "FACTORY")
 RUNNING_SOURCES = ("always", "motion", "plc")
+BACKENDS = ("openvino", "pytorch")
 
 
 class ConfigError(ValueError):
@@ -34,6 +35,9 @@ class Settings:
     pose_weights: str
     imgsz: int
     device: str
+    backend: str
+    tracker: str
+    min_keypoint_conf: float
     store_frames: bool
     blur_faces: bool
     snapshot_retention_days: int
@@ -95,6 +99,10 @@ def load_settings(config_dir: Path = Path("config"), env_file: Path = Path(".env
     if every_n < 1:
         raise ConfigError("video.process_every_n_frames must be >= 1")
 
+    backend = str(model.get("backend", "openvino")).lower()
+    if backend not in BACKENDS:
+        raise ConfigError(f"model.backend must be one of {BACKENDS}, got {backend!r}")
+
     jev_model = str(jev.get("model", "jev-1.14.0"))
     if jev_model.endswith("latest"):
         raise ConfigError("Pin an exact Jev version; do not use jev-latest")
@@ -106,6 +114,9 @@ def load_settings(config_dir: Path = Path("config"), env_file: Path = Path(".env
         pose_weights=str(model.get("pose_weights", "models/yolov8n-pose.pt")),
         imgsz=int(model.get("imgsz", 416)),
         device=str(model.get("device", "cpu")),
+        backend=backend,
+        tracker=str(model.get("tracker", "bytetrack.yaml")),
+        min_keypoint_conf=float(model.get("min_keypoint_conf", 0.5)),
         store_frames=bool(privacy.get("store_frames", False)),
         blur_faces=bool(privacy.get("blur_faces", True)),
         snapshot_retention_days=int(privacy.get("snapshot_retention_days", 7)),

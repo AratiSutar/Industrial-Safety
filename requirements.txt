@@ -4,3 +4,8 @@ numpy>=1.26,<3
 opencv-python>=4.9,<5
 PyYAML>=6.0,<7
 python-dotenv>=1.0,<2
+
+# Block 1: pose + tracking. ultralytics pulls in torch (CPU build on Windows).
+ultralytics>=8.3,<9
+lap>=0.5.12          # needed by the ByteTrack tracker
+openvino>=2024.0     # 2-3x faster inference on Intel CPUs

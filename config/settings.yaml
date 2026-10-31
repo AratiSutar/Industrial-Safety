@@ -11,6 +11,9 @@ model:
   pose_weights: models/yolov8n-pose.pt
   imgsz: 416             # smaller = faster on CPU
   device: cpu
+  backend: openvino      # openvino (faster on Intel CPUs) or pytorch
+  tracker: bytetrack.yaml
+  min_keypoint_conf: 0.5 # below this a keypoint (e.g. ankle) counts as hidden
 
 privacy:
   store_frames: false    # frames stay in memory only

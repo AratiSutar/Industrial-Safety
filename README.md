@@ -18,6 +18,11 @@ Camera-based safety assistant for a factory:
 - Faces are blurred in anything shown or stored. Snapshots (if enabled) are deleted automatically.
 - A DPIA and sign-off from Legal and worker representatives are required before filming real staff.
 
+## License note
+
+Ultralytics YOLO is licensed under AGPL-3.0. Internal use and prototypes are fine; check whether
+an Ultralytics commercial license is needed before distributing or offering this as a service.
+
 ## Setup (Windows, CPU only)
 
 ```powershell
@@ -31,10 +36,15 @@ copy config\machines.example.yaml config\machines.yaml
 ## Run
 
 ```powershell
-python main.py --source 0                  # laptop webcam
+python main.py --source 0 --show           # laptop webcam with preview window (faces blurred)
 python main.py --source path\to\video.mp4  # video file
+python main.py --backend pytorch           # compare speed against OpenVINO
 python -m pytest                           # tests
 ```
+
+On first run the pose model (`yolov8n-pose.pt`) is downloaded into `models/` and converted to
+OpenVINO format once. In the preview, a green dot marks where a person stands (from the ankles);
+an orange dot means the ankles were hidden and the bottom of the person's box was used instead.
 
 ## Project layout
 
@@ -42,6 +52,9 @@ python -m pytest                           # tests
 main.py                    orchestrator
 safety/config.py           loads settings.yaml, machines.yaml and .env
 safety/video.py            webcam / file / RTSP input with frame skipping
+safety/detector.py         Block 1: YOLOv8n-pose tracking, foot point from ankles
+safety/privacy.py          face blurring (blurs the whole head zone when unsure)
+safety/display.py          drawing for the local preview
 config/settings.yaml       general settings (committed)
 config/machines.yaml       your factory layout (not committed; copy from the example)
 models/                    model weights (not committed)
@@ -50,7 +63,7 @@ models/                    model weights (not committed)
 ## Roadmap
 
 1. ✅ Project skeleton
-2. Pose tracking and ankle point (YOLOv8n-pose)
+2. ✅ Pose tracking and ankle point (YOLOv8n-pose)
 3. Camera calibration and floor distance (homography)
 4. Proximity alert levels and machine config
 5. Operator screen and event log
