@@ -55,8 +55,11 @@ def torso_region(person: Person, min_conf: float) -> Box:
     pts = _visible(person, (L_SHOULDER, R_SHOULDER, L_HIP, R_HIP), min_conf)
     if len(pts) >= 3:
         (px1, py1), (px2, py2) = pts.min(axis=0), pts.max(axis=0)
-        mx, my = (px2 - px1) * 0.25, (py2 - py1) * 0.1
-        return (px1 - mx, py1 - my, px2 + mx, py2 + my)
+        # Seen from the side, shoulders and hips line up: never narrower than 70% of the body box
+        cx, box_w = (px1 + px2) / 2, person.box[2] - person.box[0]
+        half = max((px2 - px1) * 0.75, box_w * 0.35)
+        my = (py2 - py1) * 0.1
+        return (cx - half, py1 - my, cx + half, py2 + my)
     return _band(person.box, 0.18, 0.6)
 
 

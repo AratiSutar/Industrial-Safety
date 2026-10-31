@@ -53,6 +53,18 @@ def test_hard_hat_crop_comes_from_unblurred_frame():
     assert mean(crops["vest"]) < 50        # body crops come from the blurred frame
 
 
+def test_vest_crop_is_wide_enough_for_a_person_seen_from_the_side():
+    from safety.crops import torso_region
+    from safety.detector import L_HIP, L_SHOULDER, R_HIP, R_SHOULDER
+
+    p = person_with_eyes()                              # body box 100 px wide
+    for i, xy in ((L_SHOULDER, (150, 150)), (R_SHOULDER, (152, 150)), (L_HIP, (149, 280)), (R_HIP, (151, 280))):
+        p.keypoints[i] = xy                             # side view: all on one vertical line
+        p.keypoint_conf[i] = 0.9
+    x1, _, x2, _ = torso_region(p, 0.5)
+    assert x2 - x1 >= 70
+
+
 def test_body_part_outside_frame_gives_none():
     frame = np.zeros((100, 300, 3), np.uint8)  # person box goes far below the frame
     crops = ppe_crops(frame, frame, person_with_eyes(eye_y=70), 0.5)

@@ -13,6 +13,20 @@ from enum import IntEnum
 
 from safety.config import AlertSettings, Machine
 
+WALKING_SPEED_MPS = 1.6  # approach speed of a walking person used in ISO 13855
+
+
+def late_alarm(machine: Machine, s: AlertSettings) -> tuple[float, float] | None:
+    """Is the 'very close' line far enough out for the ALARM to fire before a fast walker gets there?
+
+    Returns (distance walked before ALARM, suggested danger_m) when it isn't, else None.
+    """
+    response_s = 1.0 / s.expected_fps + s.critical_after_s
+    walked = WALKING_SPEED_MPS * response_s
+    if machine.danger_m * s.critical_fraction >= walked:
+        return None
+    return walked, walked / s.critical_fraction
+
 
 class Level(IntEnum):
     SAFE = 0

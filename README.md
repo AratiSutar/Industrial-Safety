@@ -17,7 +17,9 @@ Camera-based safety assistant for a factory:
 
 - Video frames stay in memory and are never written to disk by default.
 - Workers are not identified: no face recognition, no names, no lasting IDs. Alerts refer to a location.
-- Faces are blurred in anything shown or stored. Snapshots (if enabled) are deleted automatically.
+- Faces are blurred in anything shown or stored, in two layers: the head of every tracked person, plus
+  every face a separate face detector finds (covers people the tracker misses, e.g. forklift drivers).
+  Snapshots (if enabled) are deleted automatically.
 - A DPIA and sign-off from Legal and worker representatives are required before filming real staff.
 
 ## License note
@@ -42,6 +44,8 @@ python main.py --source 0 --show           # laptop webcam with preview window (
 python main.py --source path\to\video.mp4  # video file
 python main.py --backend pytorch           # compare speed against OpenVINO
 python main.py --mode GATE --fake-jev      # test the background Jev pipeline offline
+python main.py --source video.mp4 --realtime   # play a file at real speed (like a live camera)
+python tools/jev_check.py --source video.mp4 --frame 300   # one-off Jev test (see below)
 python tools/calibrate.py --camera cam_floor_1 --source 0   # calibrate a camera (see below)
 python -m pytest                           # tests
 ruff check .                               # lint
@@ -73,9 +77,17 @@ Every push to `main` and every pull request runs [.github/workflows/ci.yml](.git
 lint (ruff), unit tests (pytest), and a smoke test of the tracker on a synthetic video.
 CI never uses real factory footage. A Docker image build and publish step (CD) is added with the Docker milestone.
 
-On first run the pose model (`yolov8n-pose.pt`) is downloaded into `models/` and converted to
-OpenVINO format once. In the preview, a green dot marks where a person stands (from the ankles);
-an orange dot means the ankles were hidden and the bottom of the person's box was used instead.
+On first run the pose model (`yolov8n-pose.pt`) and the face model (YuNet, checksum-verified) are
+downloaded into `models/`, and the pose model is converted to OpenVINO format once. In the preview,
+a yellow box marks the shoes (found from the ankles); an orange box means the ankles were hidden and
+the bottom of the person's box was used instead.
+
+**Speed:** video files are analysed frame by frame, so on a slow PC they play in slow motion.
+`--realtime` plays them at real speed and skips frames instead, exactly like a live camera.
+Use 1080p or 720p streams where possible: 4K costs about twice as much CPU.
+Set `alerts.expected_fps` to what your PC really achieves (printed at the end of a run); at startup
+each machine's `danger_m` is checked against how far a fast walker (1.6 m/s, ISO 13855) moves
+before an ALARM can fire.
 
 ## Camera calibration
 
@@ -131,6 +143,12 @@ when every required item is a confident "yes"; "no", "unclear", errors and timeo
 The hard-hat crop stops above the eyes and the other crops come from the face-blurred frame.
 Safety glasses are not sent to Jev; they will be checked locally.
 
+**Trying Jev for the first time:** put `TYPESAFE_API_KEY=...` in `.env` (never in code or chat), then
+`python tools/jev_check.py --source <video> --frame <n>`. It takes the largest person in that frame,
+saves the 3 crops to `data/jev_check/` so you can see exactly what is sent, and makes one call per item
+(no retries), printing the answer, confidence, time, tokens used and request id. Without a key, or with
+`--dry-run`, it only saves the crops. Use stock or consented footage only.
+
 ## Project layout
 
 ```
@@ -152,6 +170,7 @@ safety/events.py           text-only incident log
 safety/layout.py           build / save machine layouts from clicked points, zone rings
 tools/calibrate.py         interactive camera calibration
 tools/draw_machines.py     click machine areas on the image -> config/machines.yaml
+tools/jev_check.py         one-off Jev test with a single person's crops
 safety/webview.py          browser preview (MJPEG) for Docker / no screen
 Dockerfile, docker-compose.yml   local container setup
 config/settings.yaml       general settings (committed)

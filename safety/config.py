@@ -65,6 +65,7 @@ class AlertSettings:
     clear_margin_m: float = 0.2      # anti-flicker: must move this far past the line ...
     clear_after_s: float = 1.0       # ... for this long before the level drops
     lost_grace_s: float = 3.0        # keep alerting this long after a person disappears from view
+    expected_fps: float = 5.0        # analysed frames per second, used to check danger_m at startup
     event_log: Path = Path("logs/events.jsonl")
 
 
@@ -100,6 +101,9 @@ class Settings:
     calibration_dir: Path
     store_frames: bool
     blur_faces: bool
+    face_detector: bool          # second blur layer for faces whose body isn't tracked
+    face_detector_width: int     # larger finds smaller faces but costs more CPU
+    face_model: str
     snapshot_retention_days: int
     gate: GateSettings
     jev: JevSettings
@@ -245,6 +249,9 @@ def load_settings(config_dir: Path = Path("config"), env_file: Path = Path(".env
         calibration_dir=Path(raw.get("calibration_dir", "calibration")),
         store_frames=bool(privacy.get("store_frames", False)),
         blur_faces=bool(privacy.get("blur_faces", True)),
+        face_detector=bool(privacy.get("face_detector", True)),
+        face_detector_width=int(privacy.get("face_detector_width", 640)),
+        face_model=str(privacy.get("face_model", "models/face_detection_yunet_2023mar.onnx")),
         snapshot_retention_days=int(privacy.get("snapshot_retention_days", 7)),
         gate=_parse_gate(raw.get("gate", {})),
         jev=_parse_jev(raw.get("jev", {})),

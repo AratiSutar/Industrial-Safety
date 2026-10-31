@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 
 from safety import homography
-from safety.alerts import AlertEngine, Level, Observation
+from safety.alerts import AlertEngine, Level, Observation, late_alarm
 from safety.config import load_settings
 from safety.crops import ppe_crops
 from safety.detector import PoseTracker
@@ -17,7 +17,7 @@ from safety.gate import GateWatcher
 from safety.inspector import AsyncInspector, Inspection
 from safety.jev_client import FakePpeClient, JevPpeClient
 from safety.outputs import OutputRouter
-from safety.privacy import blur_faces
+from safety.privacy import FaceDetector, blur_faces
 from safety.video import frames, is_live
 from safety.webview import WebView
 from safety.zones import MachineZones
@@ -47,6 +47,8 @@ def main() -> None:
     parser.add_argument("--web", type=int, metavar="PORT",
                         help="serve the preview in a browser on this port, e.g. 8000 (for Docker / no screen)")
     parser.add_argument("--loop", action="store_true", help="video files: start again at the end (demos)")
+    parser.add_argument("--realtime", action="store_true",
+                        help="video files: play at real speed like a live camera, skipping frames as needed")
     parser.add_argument("--fake-jev", action="store_true",
                         help="offline Jev stand-in (always 'unclear', never unlocks) to test the pipeline")
     args = parser.parse_args()
@@ -60,6 +62,7 @@ def main() -> None:
 
     print(f"Mode: {mode} | camera: {settings.camera}")
     reading = ("live: newest frame" if is_live(source)
+               else "file at real speed: newest frame" if args.realtime
                else f"file: 1 of every {settings.process_every_n_frames} frames")
     print(f"Video source: {source} ({reading})")
     print(f"Pose model: {settings.pose_weights} | backend: {backend} | imgsz: {settings.imgsz}")
@@ -101,6 +104,13 @@ def main() -> None:
     router = OutputRouter()
     events = EventLog(settings.alerts.event_log)
     announcements: dict[str, tuple[Level, str]] = {}  # machine id -> current level and message
+    for m in zones.machines:
+        if (late := late_alarm(m, settings.alerts)) is not None:
+            walked, suggested = late
+            print(f"Check {m.name}: at ~{settings.alerts.expected_fps:g} fps a fast walker (1.6 m/s) moves "
+                  f"{walked:.1f} m before an ALARM can fire, but the 'very close' line is only "
+                  f"{m.danger_m * settings.alerts.critical_fraction:.1f} m out. Consider danger_m >= {suggested:.1f} m "
+                  "(ask your safety engineer).")
     unsupported = sorted({m.running_source for m in zones.machines} - {"always"})
     if unsupported:
         print(f"Machine running state: {', '.join(unsupported)} not connected yet; "
@@ -114,9 +124,14 @@ def main() -> None:
         web = WebView(args.web)
         print(f"Browser preview: http://localhost:{args.web} (faces blurred)")
 
+    faces = None
+    if settings.blur_faces and settings.face_detector:
+        faces = FaceDetector(Path(settings.face_model), settings.face_detector_width)
+        print(f"Face blur: keypoints + face detector ({settings.face_detector_width} px)")
+
     def video():
         while True:
-            yield from frames(source, settings.process_every_n_frames)
+            yield from frames(source, settings.process_every_n_frames, realtime=args.realtime)
             if not args.loop or is_live(source):
                 return
             print("Video ended, starting again (--loop)")
@@ -153,7 +168,8 @@ def main() -> None:
             events.write(closed)
 
             # Faces are always blurred before anything is shown or sent out
-            blurred = blur_faces(frame, people, settings.min_keypoint_conf)
+            face_boxes = faces.detect(frame) if faces is not None else []
+            blurred = blur_faces(frame, people, settings.min_keypoint_conf, face_boxes)
 
             if inspector is not None:
                 candidates = gate.ready(people, frame.shape) if mode == "GATE" else people
@@ -184,7 +200,7 @@ def main() -> None:
                 last_ppe = {tid: ins for tid, ins in last_ppe.items() if tid in current}
 
             if args.show or web is not None:
-                view = draw_people(blurred.copy(), people, nearest, last_ppe)
+                view = draw_people(blurred.copy(), people, nearest, last_ppe, settings.min_keypoint_conf)
                 if cal is not None:
                     draw_machines(view, cal, zones.machines, {m.id: alerts.level(m.id) for m in zones.machines})
                 if mode == "GATE":
@@ -224,6 +240,9 @@ def main() -> None:
         print(f"Done. {processed} frames | pose {1000 * infer_s / processed:.0f} ms | "
               f"whole loop {1000 * loop_s / processed:.0f} ms = {processed / loop_s:.1f} fps "
               f"(* = ankles hidden, used bottom of box)")
+        if processed / loop_s < settings.alerts.expected_fps * 0.8:
+            print(f"Note: slower than alerts.expected_fps ({settings.alerts.expected_fps:g}); "
+                  "lower it in settings.yaml so the danger-zone check stays honest.")
 
 
 if __name__ == "__main__":
