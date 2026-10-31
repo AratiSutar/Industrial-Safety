@@ -67,7 +67,41 @@ Floor distances need one calibration per camera:
 4. Check the reported error (aim for under 10 cm) and that the blue 1 m grid follows the floor, then press `s`.
 
 The result is saved to `calibration/<camera>.json` (not committed: it is site-specific).
-Machine areas in `config/machines.yaml` use the same floor coordinates.
+
+## Drawing machine areas
+
+```powershell
+python tools/draw_machines.py --camera <camera id> --source <camera or video> [--frame 120]
+```
+
+Click the corners **where each machine meets the floor** (not its top), press `n`, then answer the
+questions in the terminal (id, name, warn/danger distance, noisy). Press `o` to add an operator spot,
+`s` to save. The amber ring shows where WARN starts and the red ring where ALERT starts; the same rings
+appear in `main.py --show`. Machines are saved to `config/machines.yaml` (not committed); machines of
+other cameras in the file are kept, and the previous file is saved as `machines.yaml.bak`.
+
+Testing with stock factory video (no real measurements): calibrate using objects of known size,
+e.g. a EUR pallet (1.2 x 0.8 m) or floor tiles. Put clips in `data/videos/` (not committed).
+
+## Proximity alerts
+
+Each person near each running machine is tracked separately; the machine shows the highest level.
+
+| Level | Starts when | What happens (default outputs) |
+|---|---|---|
+| WARN  | inside `warn_m` for 0.6 s | amber light |
+| ALERT | inside `danger_m` for 1 s | red light, floor projection, operator screen, supervisor radio + announcement text |
+| ALARM | inside half of `danger_m`, moving toward the machine, ALERT not acknowledged in 10 s, or still there 20 s after the announcement | flashing red, floor projection, operator, radio, voice (noisy machines: headset radio instead) |
+
+- **Anti-flicker:** a level only drops after the person is 0.2 m past the line for 1 s.
+- **Machine stopped:** no alerts. **Operator spot:** one person may stand there; stepping into the machine is never exempt.
+- **Person lost from view** (e.g. behind the machine): the alert stays on for 3 s.
+- **Announcements name the machine, never the person:** "Attention: person at Press 3, please step back 1.5 meters."
+- **Never sound only:** every level must include a light or floor projection, because workers with ear defenders may not hear.
+- All outputs are simulated for now (terminal + preview). Real lights/speakers/radios plug into `safety/outputs.py`.
+- In the preview, press `a` to simulate the operator pressing "Announced".
+- Incidents are logged as text to `logs/events.jsonl` (not committed): machine, times, peak level, closest distance,
+  number of people, alarm reasons. No images, names or tracker numbers.
 
 ## Jev (PPE checks)
 
@@ -92,7 +126,12 @@ safety/crops.py            per-item PPE crops sized for Jev (280-1568 px), no fa
 safety/jev_client.py       Block 3: TypeSafe Jev client (+ offline fake)
 safety/inspector.py        background Jev checks and the fail-closed gate decision
 safety/gate.py             detects when a person is standing still in the gate box
+safety/alerts.py           WARN / ALERT / ALARM rules, anti-flicker, incidents
+safety/outputs.py          lights, projector, voice, radios, operator screen (simulated adapters)
+safety/events.py           text-only incident log
+safety/layout.py           build / save machine layouts from clicked points, zone rings
 tools/calibrate.py         interactive camera calibration
+tools/draw_machines.py     click machine areas on the image -> config/machines.yaml
 config/settings.yaml       general settings (committed)
 config/machines.yaml       your factory layout (not committed; copy from the example)
 models/                    model weights (not committed)
@@ -103,7 +142,7 @@ models/                    model weights (not committed)
 1. ✅ Project skeleton
 2. ✅ Pose tracking and ankle point (YOLOv8n-pose)
 3. ✅ Camera calibration, floor distance, live-camera fix, background Jev inspector
-4. Proximity alert levels (WARN / ALERT / ALARM) and machine running state
+4. ✅ Proximity alert levels (WARN / ALERT / ALARM), per-machine outputs, event log
 5. Operator screen and event log
 6. Gate: local safety-glasses check, test with real Jev API key
 7. Docker setup and CD (image published to GitHub Container Registry)

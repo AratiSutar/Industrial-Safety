@@ -23,6 +23,19 @@ privacy:
   blur_faces: true
   snapshot_retention_days: 7
 
+alerts:                  # proximity alert timings (per-machine distances are in machines.yaml)
+  warn_after_s: 0.6      # inside warn_m this long -> WARN (amber)
+  alert_after_s: 1.0     # inside danger_m this long -> ALERT (operator + announcement)
+  critical_fraction: 0.5 # inside half of danger_m ...
+  critical_after_s: 0.3  # ... this long -> ALARM straight away
+  approach_speed_mps: 0.3   # moving toward the machine during ALERT -> ALARM
+  ack_timeout_s: 10      # ALERT not acknowledged by the operator -> ALARM
+  ignored_after_s: 20    # still in danger this long after the announcement -> ALARM
+  clear_margin_m: 0.2    # anti-flicker: must move this far past the line ...
+  clear_after_s: 1.0     # ... for this long before the level drops
+  lost_grace_s: 3.0      # keep alerting this long after a person disappears (e.g. behind the machine)
+  event_log: logs/events.jsonl   # text only: no images, no names, no tracker numbers
+
 gate:
   box: [0.25, 0.05, 0.75, 0.98]   # inspection area as fractions of the image: x1, y1, x2, y2
   still_seconds: 0.5

@@ -1,4 +1,4 @@
-"""Orchestrator: tracking -> floor distance -> background Jev PPE checks."""
+"""Orchestrator: tracking -> floor distance -> proximity alerts, plus background Jev PPE checks."""
 
 import argparse
 import time
@@ -7,13 +7,16 @@ from pathlib import Path
 import cv2
 
 from safety import homography
+from safety.alerts import AlertEngine, Level, Observation
 from safety.config import load_settings
 from safety.crops import ppe_crops
 from safety.detector import PoseTracker
-from safety.display import draw_gate_box, draw_machines, draw_people
+from safety.display import draw_banner, draw_gate_box, draw_machines, draw_people
+from safety.events import EventLog
 from safety.gate import GateWatcher
 from safety.inspector import AsyncInspector, Inspection
 from safety.jev_client import FakePpeClient, JevPpeClient
+from safety.outputs import OutputRouter
 from safety.privacy import blur_faces
 from safety.video import frames, is_live
 from safety.zones import MachineZones
@@ -86,6 +89,19 @@ def main() -> None:
                           settings.tracker, settings.min_keypoint_conf)
     gate = GateWatcher(settings.gate, settings.min_keypoint_conf)
 
+    # Proximity alerts
+    alerts = AlertEngine(zones.machines, settings.alerts)
+    router = OutputRouter()
+    events = EventLog(settings.alerts.event_log)
+    announcements: dict[str, tuple[Level, str]] = {}  # machine id -> current level and message
+    unsupported = sorted({m.running_source for m in zones.machines} - {"always"})
+    if unsupported:
+        print(f"Machine running state: {', '.join(unsupported)} not connected yet; "
+              "treating those machines as running (fail-safe)")
+
+    def machine_running(machine) -> bool:
+        return True  # 'always' for now; motion detection / PLC signal plug in here
+
     processed = 0
     infer_s = loop_s = 0.0
     last_ppe: dict[int | None, Inspection] = {}  # latest Jev result per person, for the display
@@ -95,12 +111,27 @@ def main() -> None:
             people = tracker.update(frame)
             t1 = time.perf_counter()
 
-            nearest = {}
+            nearest, observations = {}, []
             if cal is not None and people:
                 floor = cal.to_floor([p.foot for p in people])
                 for p, xy in zip(people, floor, strict=True):
-                    if (n := zones.nearest(tuple(xy))) is not None:
+                    xy = (float(xy[0]), float(xy[1]))
+                    if (n := zones.nearest(xy)) is not None:
                         nearest[p.track_id] = n
+                    if p.track_id is None:
+                        continue  # can't time how long an untracked person stays
+                    observations += [Observation(p.track_id, d.machine.id, d.distance_m,
+                                                 zones.in_operator_spot(d.machine, xy))
+                                     for d in zones.distances(xy)]
+
+            changes, closed = alerts.update(observations, machine_running)
+            for change in changes:
+                print(router.apply(change))
+                if change.new > Level.SAFE:
+                    announcements[change.machine.id] = (change.new, change.message)
+                else:
+                    announcements.pop(change.machine.id, None)
+            events.write(closed)
 
             # Faces are always blurred before anything is shown or sent out
             blurred = blur_faces(frame, people, settings.min_keypoint_conf)
@@ -136,12 +167,18 @@ def main() -> None:
             if args.show:
                 view = draw_people(blurred.copy(), people, nearest, last_ppe)
                 if cal is not None:
-                    draw_machines(view, cal, zones.machines)
+                    draw_machines(view, cal, zones.machines, {m.id: alerts.level(m.id) for m in zones.machines})
                 if mode == "GATE":
                     draw_gate_box(view, settings.gate.box)
-                cv2.imshow("Industrial Safety (q to quit)", view)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                draw_banner(view, list(announcements.values()))
+                cv2.imshow("Industrial Safety (q = quit, a = operator announced)", view)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                if key == ord("a"):  # stand-in for the operator screen's "Announced" button
+                    for m in zones.machines:
+                        if alerts.acknowledge(m.id):
+                            print(f"[ACK  ] {m.name}: operator announced")
 
             if args.max_frames and processed >= args.max_frames:
                 break
@@ -154,6 +191,7 @@ def main() -> None:
                     print(describe(ins))
                 time.sleep(0.05)
             inspector.close()
+        events.write(alerts.close_all())
         if args.show:
             cv2.destroyAllWindows()
 

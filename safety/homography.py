@@ -26,9 +26,17 @@ class Calibration:
         return cv2.perspectiveTransform(pts, self.H).reshape(-1, 2)
 
     def to_image(self, floor_points) -> np.ndarray:
-        """(N, 2) floor points in meters -> (N, 2) pixels. Used to draw zones on the video."""
-        pts = np.asarray(floor_points, dtype=np.float64).reshape(-1, 1, 2)
-        return cv2.perspectiveTransform(pts, np.linalg.inv(self.H)).reshape(-1, 2)
+        """(N, 2) floor points in meters -> (N, 2) pixels. Used to draw zones on the video.
+
+        Floor points beyond the camera's horizon have no image position and come back as NaN.
+        """
+        pts = np.asarray(floor_points, dtype=np.float64).reshape(-1, 2)
+        h = np.hstack([pts, np.ones((len(pts), 1))]) @ np.linalg.inv(self.H).T
+        w = h[:, 2:3]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out = h[:, :2] / w
+        out[w[:, 0] <= 0] = np.nan
+        return out
 
 
 def compute(camera: str, image_points, floor_points) -> Calibration:

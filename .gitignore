@@ -29,6 +29,7 @@ models/*
 
 # --- Site-specific config (factory layout + camera calibration) -------------
 config/machines.yaml
+config/*.bak
 calibration/
 
 # --- Python -----------------------------------------------------------------

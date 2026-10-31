@@ -1,8 +1,11 @@
 """Draw tracking results on a (face-blurred) frame for the local preview."""
 
+import time
+
 import cv2
 import numpy as np
 
+from safety.alerts import Level
 from safety.detector import Person
 from safety.homography import Calibration
 from safety.inspector import DENY, UNLOCK, Inspection
@@ -11,6 +14,8 @@ from safety.zones import Nearest
 GREEN = (0, 200, 0)
 ORANGE = (0, 140, 255)
 RED = (0, 0, 255)
+AMBER = (0, 191, 255)
+WHITE = (255, 255, 255)
 GREY = (160, 160, 160)
 
 PPE_LABELS = {"hard_hat": "HAT", "vest": "VEST", "boots": "BOOTS"}
@@ -46,12 +51,52 @@ def draw_people(frame: np.ndarray, people: list[Person],
     return frame
 
 
-def draw_machines(frame: np.ndarray, cal: Calibration, machines) -> np.ndarray:
-    """Outline each machine's floor area on the video."""
+def _level_color(level: Level) -> tuple[int, int, int]:
+    if level == Level.ALARM:
+        return RED if int(time.monotonic() * 4) % 2 == 0 else WHITE  # flashing
+    return {Level.SAFE: GREY, Level.WARN: AMBER, Level.ALERT: RED}[level]
+
+
+def draw_floor_outline(frame: np.ndarray, cal: Calibration, floor_pts, color, thickness: int = 2,
+                       closed: bool = True) -> None:
+    """Draw a floor-coordinate outline, skipping any part beyond the camera's horizon."""
+    pts = cal.to_image(list(floor_pts) + ([floor_pts[0]] if closed else []))
+    run: list = []
+    for p in [*pts, (np.nan, np.nan)]:
+        if np.isnan(p).any() or np.abs(p).max() > 1e5:
+            if len(run) >= 2:
+                cv2.polylines(frame, [np.array(run, np.int32)], isClosed=False, color=color, thickness=thickness)
+            run = []
+        else:
+            run.append(p)
+
+
+def draw_machines(frame: np.ndarray, cal: Calibration, machines,
+                  levels: dict[str, Level] | None = None, rings: bool = True) -> np.ndarray:
+    """Outline each machine's floor area, coloured by its alert level, plus its WARN / ALERT rings."""
+    from safety.layout import ring
+
+    levels = levels or {}
     for m in machines:
-        pts = cal.to_image(m.polygon).astype(np.int32)
-        cv2.polylines(frame, [pts], isClosed=True, color=RED, thickness=2)
-        cv2.putText(frame, m.name, tuple(pts[0]), cv2.FONT_HERSHEY_SIMPLEX, 0.6, RED, 2)
+        level = levels.get(m.id, Level.SAFE)
+        color = _level_color(level)
+        if rings:
+            draw_floor_outline(frame, cal, ring(m.polygon, m.warn_m), AMBER, 1)
+            draw_floor_outline(frame, cal, ring(m.polygon, m.danger_m), RED, 1)
+        draw_floor_outline(frame, cal, m.polygon, color, 4 if level >= Level.ALERT else 2)
+        anchor = cal.to_image([m.polygon[0]])[0]
+        if not np.isnan(anchor).any():
+            label = m.name if level == Level.SAFE else f"{m.name}: {level.name}"
+            cv2.putText(frame, label, (int(anchor[0]), int(anchor[1])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+    return frame
+
+
+def draw_banner(frame: np.ndarray, announcements: list[tuple[Level, str]]) -> np.ndarray:
+    """Current alert messages across the top, highest level first."""
+    for i, (level, text) in enumerate(sorted(announcements, key=lambda a: -a[0])):
+        y = 28 + i * 30
+        cv2.rectangle(frame, (0, y - 22), (frame.shape[1], y + 8), (0, 0, 0), -1)
+        cv2.putText(frame, f"{level.name}: {text}", (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, _level_color(level), 2)
     return frame
 
 

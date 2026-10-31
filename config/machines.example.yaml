@@ -1,5 +1,12 @@
 # Example factory layout. Copy to config/machines.yaml and edit for your site.
 # Coordinates are floor positions in meters, measured after camera calibration.
+#
+# outputs: what happens at each level. Every level must include at least one light or
+# floor projection, because workers wearing ear defenders may not hear sound.
+#   Worker sees:   light_amber, light_red, light_red_flashing, floor_projection
+#   People:        operator_screen, supervisor_radio
+#   Worker hears:  voice, headset_radio (radio in ear defenders), wristband (vibrates; needs Legal sign-off)
+# Leave outputs out to use the defaults (noisy machines get headset_radio instead of voice).
 
 machines:
   - id: press_03
@@ -7,8 +14,14 @@ machines:
     camera: cam_floor_1
     polygon: [[2.0, 5.0], [4.5, 5.0], [4.5, 7.0], [2.0, 7.0]]
     warn_m: 1.5              # amber light at the machine
-    danger_m: 0.8            # operator alert, then buzzer
+    danger_m: 0.8            # operator alert, then alarm
     running_source: always   # always | motion | plc
+    noisy: true              # ear defenders required: no voice by default
+    operator_spot: [[2.8, 4.3], [3.6, 4.3], [3.6, 4.9], [2.8, 4.9]]   # one operator may stand here
+    outputs:
+      WARN:  [light_amber]
+      ALERT: [light_red, floor_projection, operator_screen, supervisor_radio]
+      ALARM: [light_red_flashing, floor_projection, operator_screen, supervisor_radio, headset_radio]
 
   - id: lathe_01
     name: "Lathe 1"
