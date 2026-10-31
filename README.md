@@ -47,6 +47,26 @@ python -m pytest                           # tests
 ruff check .                               # lint
 ```
 
+## Docker (run locally)
+
+```powershell
+docker compose up --build      # first build takes several minutes
+# open http://localhost:8000   (live view, faces blurred)
+docker compose down            # stop
+```
+
+- The video, camera and mode are set in `command:` in [docker-compose.yml](docker-compose.yml).
+- `config/`, `calibration/` and `data/` are mounted read-only; `models/` and `logs/` are kept on your PC.
+- `.env` (Jev API key) is passed in at run time and never copied into the image; neither are videos or site data.
+- The port is published to this PC only (`127.0.0.1`). Use `"8000:8000"` to allow other PCs on the network.
+- Webcams can't be used inside Docker on Windows. Use a video file, or a network camera (`rtsp://...`);
+  for a quick test a phone IP-camera app works as a network camera.
+- `tools/calibrate.py` and `tools/draw_machines.py` need a screen, so run them on the PC (not in Docker).
+- Docker Desktop limits CPU and memory for containers; if it runs slowly, raise them in Docker Desktop settings
+  (Resources) or in `%UserProfile%\.wslconfig`.
+
+Without Docker, `python main.py --web 8000` gives the same browser view.
+
 ## CI
 
 Every push to `main` and every pull request runs [.github/workflows/ci.yml](.github/workflows/ci.yml):
@@ -132,6 +152,8 @@ safety/events.py           text-only incident log
 safety/layout.py           build / save machine layouts from clicked points, zone rings
 tools/calibrate.py         interactive camera calibration
 tools/draw_machines.py     click machine areas on the image -> config/machines.yaml
+safety/webview.py          browser preview (MJPEG) for Docker / no screen
+Dockerfile, docker-compose.yml   local container setup
 config/settings.yaml       general settings (committed)
 config/machines.yaml       your factory layout (not committed; copy from the example)
 models/                    model weights (not committed)
@@ -145,4 +167,4 @@ models/                    model weights (not committed)
 4. ✅ Proximity alert levels (WARN / ALERT / ALARM), per-machine outputs, event log
 5. Operator screen and event log
 6. Gate: local safety-glasses check, test with real Jev API key
-7. Docker setup and CD (image published to GitHub Container Registry)
+7. ✅ Docker (local) — CD (image published to GitHub Container Registry) still to do

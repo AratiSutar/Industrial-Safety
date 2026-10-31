@@ -19,6 +19,7 @@ from safety.jev_client import FakePpeClient, JevPpeClient
 from safety.outputs import OutputRouter
 from safety.privacy import blur_faces
 from safety.video import frames, is_live
+from safety.webview import WebView
 from safety.zones import MachineZones
 
 
@@ -39,14 +40,20 @@ def main() -> None:
     parser.add_argument("--source", help="override video.source from settings.yaml")
     parser.add_argument("--backend", choices=("openvino", "pytorch"), help="override model.backend")
     parser.add_argument("--mode", choices=("GATE", "FACTORY"), help="override mode")
+    parser.add_argument("--camera", help="override video.camera (picks the calibration and machines)")
     parser.add_argument("--config-dir", default="config", help="folder with settings.yaml and machines.yaml")
     parser.add_argument("--max-frames", type=int, default=0, help="stop after N processed frames (0 = run forever)")
     parser.add_argument("--show", action="store_true", help="open a local preview window (faces blurred)")
+    parser.add_argument("--web", type=int, metavar="PORT",
+                        help="serve the preview in a browser on this port, e.g. 8000 (for Docker / no screen)")
+    parser.add_argument("--loop", action="store_true", help="video files: start again at the end (demos)")
     parser.add_argument("--fake-jev", action="store_true",
                         help="offline Jev stand-in (always 'unclear', never unlocks) to test the pipeline")
     args = parser.parse_args()
 
     settings = load_settings(Path(args.config_dir))
+    if args.camera:
+        settings.camera = args.camera
     source = args.source or settings.video_source
     backend = args.backend or settings.backend
     mode = args.mode or settings.mode
@@ -102,11 +109,23 @@ def main() -> None:
     def machine_running(machine) -> bool:
         return True  # 'always' for now; motion detection / PLC signal plug in here
 
+    web = None
+    if args.web:
+        web = WebView(args.web)
+        print(f"Browser preview: http://localhost:{args.web} (faces blurred)")
+
+    def video():
+        while True:
+            yield from frames(source, settings.process_every_n_frames)
+            if not args.loop or is_live(source):
+                return
+            print("Video ended, starting again (--loop)")
+
     processed = 0
     infer_s = loop_s = 0.0
     last_ppe: dict[int | None, Inspection] = {}  # latest Jev result per person, for the display
     try:
-        for index, frame in frames(source, settings.process_every_n_frames):
+        for index, frame in video():
             t0 = time.perf_counter()
             people = tracker.update(frame)
             t1 = time.perf_counter()
@@ -164,13 +183,17 @@ def main() -> None:
                 current = {p.track_id for p in people}
                 last_ppe = {tid: ins for tid, ins in last_ppe.items() if tid in current}
 
-            if args.show:
+            if args.show or web is not None:
                 view = draw_people(blurred.copy(), people, nearest, last_ppe)
                 if cal is not None:
                     draw_machines(view, cal, zones.machines, {m.id: alerts.level(m.id) for m in zones.machines})
                 if mode == "GATE":
                     draw_gate_box(view, settings.gate.box)
                 draw_banner(view, list(announcements.values()))
+                if web is not None:
+                    web.publish(view)
+
+            if args.show:
                 cv2.imshow("Industrial Safety (q = quit, a = operator announced)", view)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
@@ -192,6 +215,8 @@ def main() -> None:
                 time.sleep(0.05)
             inspector.close()
         events.write(alerts.close_all())
+        if web is not None:
+            web.close()
         if args.show:
             cv2.destroyAllWindows()
 

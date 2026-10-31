@@ -61,14 +61,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--camera", required=True, help="camera id, as used in settings.yaml and machines.yaml")
     parser.add_argument("--source", required=True, help="webcam index, video file or rtsp:// URL")
+    parser.add_argument("--frame", type=int, default=0, help="video files: which frame to calibrate on")
     parser.add_argument("--out-dir", default="calibration", help="where to save <camera>.json")
     args = parser.parse_args()
 
     cap = open_source(args.source)
+    if args.frame:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, args.frame)
     ok, frame = cap.read()
     cap.release()
     if not ok:
-        sys.exit(f"Could not read a frame from {args.source}")
+        sys.exit(f"Could not read frame {args.frame} from {args.source}")
 
     image_pts: list[tuple[float, float]] = []
     floor_pts: list[tuple[float, float]] = []

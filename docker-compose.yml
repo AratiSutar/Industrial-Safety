@@ -1,0 +1,23 @@
+# Run the monitor locally in Docker:
+#   docker compose up --build        then open http://localhost:8000
+#   docker compose down              to stop
+# Change the video, camera or mode in `command` below. Webcams can't be used inside Docker on
+# Windows; use a video file or a network camera (rtsp://...) instead.
+services:
+  safety:
+    build: .
+    image: industrial-safety:local
+    command: ["--source", "data/videos/warehouse_forklift.mp4", "--camera", "cam_warehouse",
+              "--web", "8000", "--loop"]
+    ports:
+      - "127.0.0.1:8000:8000"   # this PC only. Use "8000:8000" to allow other PCs on the network.
+    env_file:
+      - path: .env               # TYPESAFE_API_KEY; optional, Jev stays off without it
+        required: false
+    volumes:
+      - ./config:/app/config:ro              # settings.yaml + your machines.yaml
+      - ./calibration:/app/calibration:ro    # camera calibrations
+      - ./data:/app/data:ro                  # videos (never copied into the image)
+      - ./models:/app/models                 # model download + OpenVINO export, kept between runs
+      - ./logs:/app/logs                     # event log (text only)
+    restart: unless-stopped
