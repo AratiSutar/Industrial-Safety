@@ -9,3 +9,9 @@ python-dotenv>=1.0,<2
 ultralytics>=8.3,<9
 lap>=0.5.12          # needed by the ByteTrack tracker
 openvino>=2024.0     # 2-3x faster inference on Intel CPUs
+
+# Block 2: floor distance to machine areas
+shapely>=2.0,<3
+
+# Block 3: Jev (TypeSafe). Pre-1.0 SDK, so pin the minor version.
+typesafe-sdk>=0.7.5,<0.8

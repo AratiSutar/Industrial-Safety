@@ -11,7 +11,9 @@ def test_default_settings_load():
     s = load_settings(ROOT / "config", env_file=ROOT / "missing.env")
     assert s.mode in ("GATE", "FACTORY")
     assert s.process_every_n_frames >= 1
-    assert not s.jev_model.endswith("latest")
+    assert not s.jev.model.endswith("latest")
+    assert s.jev.required_items == ("hard_hat", "vest", "boots")
+    assert s.gate.box[0] < s.gate.box[2]
 
 
 def test_example_machines_are_valid():

@@ -7,6 +7,9 @@ import numpy as np
 
 # COCO keypoint indices used by YOLOv8-pose
 NOSE, L_EYE, R_EYE, L_EAR, R_EAR = 0, 1, 2, 3, 4
+L_SHOULDER, R_SHOULDER = 5, 6
+L_HIP, R_HIP = 11, 12
+L_KNEE, R_KNEE = 13, 14
 L_ANKLE, R_ANKLE = 15, 16
 FACE_KEYPOINTS = (NOSE, L_EYE, R_EYE, L_EAR, R_EAR)
 

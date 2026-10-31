@@ -41,6 +41,8 @@ copy config\machines.example.yaml config\machines.yaml
 python main.py --source 0 --show           # laptop webcam with preview window (faces blurred)
 python main.py --source path\to\video.mp4  # video file
 python main.py --backend pytorch           # compare speed against OpenVINO
+python main.py --mode GATE --fake-jev      # test the background Jev pipeline offline
+python tools/calibrate.py --camera cam_floor_1 --source 0   # calibrate a camera (see below)
 python -m pytest                           # tests
 ruff check .                               # lint
 ```
@@ -55,6 +57,26 @@ On first run the pose model (`yolov8n-pose.pt`) is downloaded into `models/` and
 OpenVINO format once. In the preview, a green dot marks where a person stands (from the ankles);
 an orange dot means the ankles were hidden and the bottom of the person's box was used instead.
 
+## Camera calibration
+
+Floor distances need one calibration per camera:
+
+1. Mark at least 4 points on the floor with tape (5–6 is better), spread out, never 3 on one line.
+2. Measure each point from one corner of the room: x to the right, y forward, in meters.
+3. Run `python tools/calibrate.py --camera <camera id> --source <camera>`, click each point and type its position.
+4. Check the reported error (aim for under 10 cm) and that the blue 1 m grid follows the floor, then press `s`.
+
+The result is saved to `calibration/<camera>.json` (not committed: it is site-specific).
+Machine areas in `config/machines.yaml` use the same floor coordinates.
+
+## Jev (PPE checks)
+
+Each PPE item gets its own yes / no / unclear question to Jev, with its own crop, sent in parallel
+from background threads so the video loop never waits for the network. The gate only unlocks
+when every required item is a confident "yes"; "no", "unclear", errors and timeouts keep it locked.
+The hard-hat crop stops above the eyes and the other crops come from the face-blurred frame.
+Safety glasses are not sent to Jev; they will be checked locally.
+
 ## Project layout
 
 ```
@@ -64,6 +86,13 @@ safety/video.py            webcam / file / RTSP input with frame skipping
 safety/detector.py         Block 1: YOLOv8n-pose tracking, foot point from ankles
 safety/privacy.py          face blurring (blurs the whole head zone when unsure)
 safety/display.py          drawing for the local preview
+safety/homography.py       Block 2: pixels -> floor meters, per-camera calibration files
+safety/zones.py            distance from a person to the nearest machine area
+safety/crops.py            per-item PPE crops sized for Jev (280-1568 px), no faces
+safety/jev_client.py       Block 3: TypeSafe Jev client (+ offline fake)
+safety/inspector.py        background Jev checks and the fail-closed gate decision
+safety/gate.py             detects when a person is standing still in the gate box
+tools/calibrate.py         interactive camera calibration
 config/settings.yaml       general settings (committed)
 config/machines.yaml       your factory layout (not committed; copy from the example)
 models/                    model weights (not committed)
@@ -73,8 +102,8 @@ models/                    model weights (not committed)
 
 1. ✅ Project skeleton
 2. ✅ Pose tracking and ankle point (YOLOv8n-pose)
-3. Camera calibration and floor distance (homography)
-4. Proximity alert levels and machine config
+3. ✅ Camera calibration, floor distance, live-camera fix, background Jev inspector
+4. Proximity alert levels (WARN / ALERT / ALARM) and machine running state
 5. Operator screen and event log
-6. Jev client and gate logic
-7. Docker setup
+6. Gate: local safety-glasses check, test with real Jev API key
+7. Docker setup and CD (image published to GitHub Container Registry)

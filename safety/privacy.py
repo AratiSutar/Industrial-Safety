@@ -7,15 +7,20 @@ from safety.detector import FACE_KEYPOINTS, Box, Person
 
 
 def face_box(keypoints: np.ndarray, keypoint_conf: np.ndarray, box: Box, min_conf: float) -> Box:
-    """Area to blur. When the face keypoints are uncertain, blur the whole head zone instead."""
+    """Area to blur: eyebrows down to the chin, so a hard hat on top of the head stays visible.
+
+    When the face keypoints are uncertain, blur the whole head zone instead (privacy wins).
+    """
     x1, y1, x2, y2 = box
     visible = [i for i in FACE_KEYPOINTS if keypoint_conf[i] >= min_conf]
     if len(visible) >= 2:
         pts = keypoints[visible]
-        cx, cy = pts.mean(axis=0)
+        cx = float(pts[:, 0].mean())
         spread = float(np.ptp(pts, axis=0).max())
-        half = max(spread, (x2 - x1) * 0.25)  # generous: never smaller than a quarter body width
-        return (cx - half, cy - half * 1.3, cx + half, cy + half)  # extra room above for hair/hat
+        half = max(spread, (x2 - x1) * 0.25)  # generous width: never less than a quarter body width
+        top = float(pts[:, 1].min()) - half * 0.3   # just above the eyebrows
+        bottom = float(pts[:, 1].max()) + half      # below the chin
+        return (cx - half, top, cx + half, bottom)
     return (x1, y1, x2, y1 + (y2 - y1) * 0.3)
 
 

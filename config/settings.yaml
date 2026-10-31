@@ -5,7 +5,8 @@ mode: FACTORY            # GATE or FACTORY
 
 video:
   source: "0"            # webcam index, video file path, or rtsp:// URL
-  process_every_n_frames: 3   # CPU saver: analyse 1 of every N frames
+  camera: cam_floor_1    # which camera this is; must match machines.yaml and the calibration file
+  process_every_n_frames: 3   # video files only; live cameras always use the newest frame
 
 model:
   pose_weights: models/yolov8n-pose.pt
@@ -15,11 +16,22 @@ model:
   tracker: bytetrack.yaml
   min_keypoint_conf: 0.5 # below this a keypoint (e.g. ankle) counts as hidden
 
+calibration_dir: calibration   # one <camera>.json per camera, made with tools/calibrate.py
+
 privacy:
   store_frames: false    # frames stay in memory only
   blur_faces: true
   snapshot_retention_days: 7
 
+gate:
+  box: [0.25, 0.05, 0.75, 0.98]   # inspection area as fractions of the image: x1, y1, x2, y2
+  still_seconds: 0.5
+  still_tolerance: 0.05           # max foot movement while "still", as a fraction of body height
+
 jev:
   model: jev-1.14.0      # pinned; never use jev-latest
   timeout_s: 2.0
+  max_workers: 3         # parallel API calls (one per PPE item)
+  min_confidence: 0.7    # below this an answer counts as unclear
+  required_items: [hard_hat, vest, boots]   # safety glasses: checked locally (later milestone)
+  recheck_s: 60          # FACTORY mode: re-check each person's PPE at most this often (0 = off)
