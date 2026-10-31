@@ -175,7 +175,7 @@ def main() -> None:
                 candidates = gate.ready(people, frame.shape) if mode == "GATE" else people
                 for p in candidates:
                     if p.track_id is not None and inspector.can_submit(p.track_id):
-                        inspector.submit(p.track_id, ppe_crops(frame, blurred, p, settings.min_keypoint_conf))
+                        inspector.submit(p.track_id, ppe_crops(blurred, p, settings.min_keypoint_conf))
                 for ins in inspector.poll():
                     print(describe(ins))
                     last_ppe[ins.track_id] = ins

@@ -1,7 +1,8 @@
 """Cut one image per PPE item out of a person, sized for Jev.
 
-Privacy: the hard-hat crop stops above the eyes, and vest/boot crops are taken from the
-face-blurred frame, so no recognisable face is ever sent to the API.
+Privacy: every crop is taken from the face-blurred frame, and the hard-hat crop also stops above
+the eyes. Two protections, because a keypoint placed slightly too low (seen on real images) would
+otherwise let eyebrows or glasses through. No recognisable face is ever sent to the API.
 """
 
 import cv2
@@ -13,6 +14,7 @@ from safety.detector import (
     L_HIP,
     L_KNEE,
     L_SHOULDER,
+    NOSE,
     R_ANKLE,
     R_EYE,
     R_HIP,
@@ -39,7 +41,7 @@ def _band(box: Box, top: float, bottom: float) -> Box:
 
 
 def head_region(person: Person, min_conf: float) -> Box:
-    """Top of the head, cut off above the eyes."""
+    """Top of the head, cut off above the eyebrows."""
     x1, y1, x2, y2 = person.box
     eyes = _visible(person, (L_EYE, R_EYE), min_conf)
     if len(eyes):
@@ -47,7 +49,11 @@ def head_region(person: Person, min_conf: float) -> Box:
         cx = float(eyes[:, 0].mean())
         half = (x2 - x1) * 0.35
         top = max(y1 - (eye_y - y1) * 0.5, y1 - (y2 - y1) * 0.05)  # room for the helmet
-        return (cx - half, top, cx + half, eye_y - (eye_y - y1) * 0.1)
+        # Eyebrows sit about half the eye-to-nose distance above the eyes; stay above them
+        nose = _visible(person, (NOSE,), min_conf)
+        margin = (float(nose[0, 1]) - eye_y) * 0.6 if len(nose) and nose[0, 1] > eye_y else 0.0
+        bottom = eye_y - max(margin, (eye_y - y1) * 0.15)
+        return (cx - half, top, cx + half, bottom)
     return _band(person.box, -0.03, 0.12)
 
 
@@ -104,15 +110,18 @@ def to_jpeg(img: np.ndarray) -> bytes:
     return buf.tobytes()
 
 
-def ppe_crops(frame: np.ndarray, blurred: np.ndarray, person: Person, min_conf: float) -> dict[str, bytes | None]:
-    """JPEG bytes per PPE item, or None when that part of the body isn't visible enough."""
+def ppe_crops(blurred: np.ndarray, person: Person, min_conf: float) -> dict[str, bytes | None]:
+    """JPEG bytes per PPE item, or None when that part of the body isn't visible enough.
+
+    Takes only the face-blurred frame, so a raw frame can't be sent by mistake.
+    """
     regions = {
-        "hard_hat": (frame, head_region(person, min_conf)),     # stops above the eyes
-        "vest": (blurred, torso_region(person, min_conf)),
-        "boots": (blurred, feet_region(person, min_conf)),
+        "hard_hat": head_region(person, min_conf),
+        "vest": torso_region(person, min_conf),
+        "boots": feet_region(person, min_conf),
     }
     out = {}
-    for item, (src, region) in regions.items():
-        crop = cut(src, region)
+    for item, region in regions.items():
+        crop = cut(blurred, region)
         out[item] = to_jpeg(crop) if crop is not None else None
     return out

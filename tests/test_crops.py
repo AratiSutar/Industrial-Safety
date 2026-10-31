@@ -32,25 +32,39 @@ def test_hard_hat_crop_stops_above_the_eyes():
     assert bottom < 100
 
 
+def test_hard_hat_crop_stays_above_eyebrows_when_nose_is_visible():
+    from safety.detector import NOSE
+
+    p = person_with_eyes(eye_y=100)
+    p.keypoints[NOSE], p.keypoint_conf[NOSE] = (150, 120), 0.9   # eye-to-nose 20 px
+    _, _, _, bottom = head_region(p, 0.5)
+    assert bottom <= 100 - 0.6 * 20
+
+
 def test_ppe_crops_are_valid_jpegs_within_limits():
     frame = np.random.default_rng(0).integers(0, 255, (500, 300, 3), dtype=np.uint8)
-    crops = ppe_crops(frame, frame, person_with_eyes(), 0.5)
+    crops = ppe_crops(frame, person_with_eyes(), 0.5)
     assert set(crops) == {"hard_hat", "vest", "boots"}
     for jpeg in crops.values():
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
         assert MIN_SIDE <= min(img.shape[:2]) and max(img.shape[:2]) <= MAX_SIDE
 
 
-def test_hard_hat_crop_comes_from_unblurred_frame():
-    original = np.full((500, 300, 3), 255, np.uint8)   # white = real image
-    blurred = np.zeros((500, 300, 3), np.uint8)        # black = blurred image
-    crops = ppe_crops(original, blurred, person_with_eyes(), 0.5)
+def test_face_missed_by_keypoints_is_still_hidden_in_hard_hat_crop():
+    """Real-image case: the eye keypoint was placed too low, so the crop reached the eyebrows.
+    The face detector's box is blurred in the frame the crop is cut from, so the face stays hidden."""
+    from safety.privacy import blur_faces
 
-    def mean(jpeg):
-        return cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR).mean()
-
-    assert mean(crops["hard_hat"]) > 200   # Jev sees the real helmet
-    assert mean(crops["vest"]) < 50        # body crops come from the blurred frame
+    rng = np.random.default_rng(3)
+    frame = rng.integers(0, 255, (500, 300, 3), dtype=np.uint8)
+    p = person_with_eyes(eye_y=115)                          # true eyes are at y=95..105
+    true_face = (125.0, 85.0, 175.0, 140.0)                  # what the face detector found
+    blurred = blur_faces(frame, [p], 0.5, faces=[true_face])
+    x1, y1, x2, y2 = (int(v) for v in head_region(p, 0.5))
+    overlap = (slice(max(y1, 85), min(y2, 140)), slice(max(x1, 125), min(x2, 175)))
+    assert not np.array_equal(blurred[overlap], frame[overlap])   # face part of the crop is pixelated
+    crops = ppe_crops(blurred, p, 0.5)
+    assert crops["hard_hat"] is not None
 
 
 def test_vest_crop_is_wide_enough_for_a_person_seen_from_the_side():
@@ -67,5 +81,5 @@ def test_vest_crop_is_wide_enough_for_a_person_seen_from_the_side():
 
 def test_body_part_outside_frame_gives_none():
     frame = np.zeros((100, 300, 3), np.uint8)  # person box goes far below the frame
-    crops = ppe_crops(frame, frame, person_with_eyes(eye_y=70), 0.5)
+    crops = ppe_crops(frame, person_with_eyes(eye_y=70), 0.5)
     assert crops["boots"] is None

@@ -31,7 +31,9 @@ def face_box(keypoints: np.ndarray, keypoint_conf: np.ndarray, box: Box, min_con
         pts = keypoints[visible]
         cx = float(pts[:, 0].mean())
         spread = float(np.ptp(pts, axis=0).max())
-        half = max(spread, (x2 - x1) * 0.25)  # generous width: never less than a quarter body width
+        # Generous, but sized from body HEIGHT: a crouching person's box is very wide, and sizing
+        # from width blurred the whole helmet away (seen on a real image of a kneeling grinder)
+        half = max(spread, (y2 - y1) * 0.1)
         top = float(pts[:, 1].min()) - half * 0.3   # just above the eyebrows
         bottom = float(pts[:, 1].max()) + half      # below the chin
         return (cx - half, top, cx + half, bottom)

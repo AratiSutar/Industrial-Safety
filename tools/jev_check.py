@@ -3,6 +3,7 @@
 Usage:
     python tools/jev_check.py --source data/videos/warehouse_forklift.mp4 --frame 300
     python tools/jev_check.py --source data/videos/warehouse_forklift.mp4 --frame 300 --dry-run
+    python tools/jev_check.py --source data/images/worker.jpg
 
 Without TYPESAFE_API_KEY in .env (or with --dry-run) nothing is sent: the crops that WOULD be sent
 are saved to data/jev_check/ so you can see them. Only use stock or consented footage.
@@ -27,19 +28,24 @@ from safety.video import open_source  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", required=True, help="video file or camera")
+    parser.add_argument("--source", required=True, help="image, video file or camera")
     parser.add_argument("--frame", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true", help="save the crops but don't call Jev")
     parser.add_argument("--out-dir", default="data/jev_check", help="where to save the crops (git-ignored)")
     args = parser.parse_args()
 
     settings = load_settings()
-    cap = open_source(args.source)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, args.frame)
-    ok, frame = cap.read()
-    cap.release()
-    if not ok:
-        sys.exit(f"Could not read frame {args.frame}")
+    if Path(args.source).suffix.lower() in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
+        frame = cv2.imread(args.source)
+        if frame is None:
+            sys.exit(f"Could not read image {args.source}")
+    else:
+        cap = open_source(args.source)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, args.frame)
+        ok, frame = cap.read()
+        cap.release()
+        if not ok:
+            sys.exit(f"Could not read frame {args.frame}")
 
     tracker = PoseTracker(settings.pose_weights, settings.imgsz, settings.device, settings.backend,
                           settings.tracker, settings.min_keypoint_conf)
@@ -51,7 +57,7 @@ def main() -> None:
 
     face_boxes = FaceDetector(Path(settings.face_model), settings.face_detector_width).detect(frame)
     blurred = blur_faces(frame, people, settings.min_keypoint_conf, face_boxes)
-    crops = ppe_crops(frame, blurred, person, settings.min_keypoint_conf)
+    crops = ppe_crops(blurred, person, settings.min_keypoint_conf)
 
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)

@@ -58,6 +58,18 @@ def test_face_blur_leaves_top_of_head_visible_for_hard_hat():
     assert not np.array_equal(out[95:130, 130:170], frame[95:130, 130:170])  # eyes/nose blurred
 
 
+def test_crouching_person_blur_does_not_swallow_the_helmet():
+    """A crouching worker's box is wide and short; the blur must still stay around the face."""
+    kp, kc = keypoints(conf=0.1)
+    kp[L_EYE], kp[R_EYE], kp[NOSE] = (300, 200), (330, 205), (320, 225)
+    kc[L_EYE] = kc[R_EYE] = kc[NOSE] = 0.9
+    wide_box = (100.0, 120.0, 900.0, 600.0)          # 800 wide, 480 tall
+    x1, y1, x2, y2 = face_box(kp, kc, wide_box, 0.5)
+    assert x2 - x1 < 150                               # was 400 px wide before the fix
+    assert y1 > 150                                    # helmet zone above the head stays sharp
+    assert y1 < 200 < 225 < y2                         # eyes and nose are inside the blur
+
+
 def test_blur_changes_face_but_not_original():
     rng = np.random.default_rng(0)
     frame = rng.integers(0, 255, (500, 300, 3), dtype=np.uint8)
