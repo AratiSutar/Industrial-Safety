@@ -86,7 +86,7 @@ class PoseTracker:
                  else np.ones(kps.shape[:2]))
 
         people = []
-        for box, conf, tid, kp, kc in zip(boxes, confs, ids, kps, kconf):
+        for box, conf, tid, kp, kc in zip(boxes, confs, ids, kps, kconf, strict=True):
             box = tuple(float(v) for v in box)
             foot, from_ankles = foot_point(kp, kc, box, self.min_keypoint_conf)
             people.append(Person(tid, box, float(conf), kp, kc, foot, from_ankles))

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install system libraries for OpenCV
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+
+      - name: Install CPU-only PyTorch (avoids ~2 GB of CUDA libraries)
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest -v
+
+      - name: Cache pose model
+        uses: actions/cache@v4
+        with:
+          path: models/yolov8n-pose.pt
+          key: pose-model-yolov8n-pose
+
+      # Uses a sample photo bundled with ultralytics. Never use real factory footage in CI.
+      - name: Smoke test on synthetic video
+        run: |
+          python -c "import cv2; from ultralytics.utils import ASSETS; img = cv2.imread(str(ASSETS / 'bus.jpg')); h, w = img.shape[:2]; vw = cv2.VideoWriter('smoke.avi', cv2.VideoWriter_fourcc(*'MJPG'), 30, (w, h)); [vw.write(img) for _ in range(30)]; vw.release()"
+          python main.py --source smoke.avi --backend pytorch --max-frames 5

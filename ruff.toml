@@ -1,0 +1,7 @@
+line-length = 120
+target-version = "py311"
+extend-exclude = ["models"]
+
+[lint]
+# Errors, pyflakes, import order, common bug patterns, modern syntax
+select = ["E", "F", "I", "B", "UP"]

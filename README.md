@@ -1,5 +1,7 @@
 # Industrial Safety Monitor
 
+[![CI](https://github.com/AratiSutar/Industrial-Safety/actions/workflows/ci.yml/badge.svg)](https://github.com/AratiSutar/Industrial-Safety/actions/workflows/ci.yml)
+
 Camera-based safety assistant for a factory:
 
 - **Gate mode:** checks PPE (hard hat, high-vis vest, safety glasses, safety boots) before a worker enters.
@@ -40,7 +42,14 @@ python main.py --source 0 --show           # laptop webcam with preview window (
 python main.py --source path\to\video.mp4  # video file
 python main.py --backend pytorch           # compare speed against OpenVINO
 python -m pytest                           # tests
+ruff check .                               # lint
 ```
+
+## CI
+
+Every push to `main` and every pull request runs [.github/workflows/ci.yml](.github/workflows/ci.yml):
+lint (ruff), unit tests (pytest), and a smoke test of the tracker on a synthetic video.
+CI never uses real factory footage. A Docker image build and publish step (CD) is added with the Docker milestone.
 
 On first run the pose model (`yolov8n-pose.pt`) is downloaded into `models/` and converted to
 OpenVINO format once. In the preview, a green dot marks where a person stands (from the ankles);
