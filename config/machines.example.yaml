@@ -1,0 +1,19 @@
+# Example factory layout. Copy to config/machines.yaml and edit for your site.
+# Coordinates are floor positions in meters, measured after camera calibration.
+
+machines:
+  - id: press_03
+    name: "Press 3"          # used in announcements: "Person at Press 3"
+    camera: cam_floor_1
+    polygon: [[2.0, 5.0], [4.5, 5.0], [4.5, 7.0], [2.0, 7.0]]
+    warn_m: 1.5              # amber light at the machine
+    danger_m: 0.8            # operator alert, then buzzer
+    running_source: always   # always | motion | plc
+
+  - id: lathe_01
+    name: "Lathe 1"
+    camera: cam_floor_1
+    polygon: [[7.0, 2.0], [8.5, 2.0], [8.5, 3.2], [7.0, 3.2]]
+    warn_m: 1.0
+    danger_m: 0.5
+    running_source: always

@@ -1,0 +1,22 @@
+# General settings. Site-specific machine layout lives in config/machines.yaml
+# (copy it from config/machines.example.yaml).
+
+mode: FACTORY            # GATE or FACTORY
+
+video:
+  source: "0"            # webcam index, video file path, or rtsp:// URL
+  process_every_n_frames: 3   # CPU saver: analyse 1 of every N frames
+
+model:
+  pose_weights: models/yolov8n-pose.pt
+  imgsz: 416             # smaller = faster on CPU
+  device: cpu
+
+privacy:
+  store_frames: false    # frames stay in memory only
+  blur_faces: true
+  snapshot_retention_days: 7
+
+jev:
+  model: jev-1.14.0      # pinned; never use jev-latest
+  timeout_s: 2.0
