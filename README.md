@@ -4,7 +4,8 @@
 
 Camera-based safety assistant for a factory:
 
-- **Gate mode:** checks PPE (hard hat, high-vis vest, safety glasses, safety boots) before a worker enters.
+- **Gate mode:** checks PPE (hard hat, high-vis vest, safety boots) before a worker enters.
+  A safety-glasses check is planned (see Roadmap).
 - **Factory mode:** measures each person's floor distance to every running machine and raises
   alerts in levels: **WARN** (amber light at the machine) → **ALERT** (operator screen; operator
   announces by location, e.g. "Person at Press 3, step back") → **ALARM** (buzzer at that machine only).
@@ -46,6 +47,9 @@ python main.py --backend pytorch           # compare speed against OpenVINO
 python main.py --mode GATE --fake-jev      # test the background Jev pipeline offline
 python main.py --source video.mp4 --realtime   # play a file at real speed (like a live camera)
 python tools/jev_check.py --source video.mp4 --frame 300   # one-off Jev test (see below)
+python tools/jev_check.py --list-models    # which Jev models your API key can use
+python tools/check_images.py --source data/images          # boxes + PPE crops for every photo
+python tools/check_images.py --source data/images --jev    # ...and Jev's answers written on each person
 python tools/calibrate.py --camera cam_floor_1 --source 0   # calibrate a camera (see below)
 python -m pytest                           # tests
 ruff check .                               # lint
@@ -57,9 +61,14 @@ ruff check .                               # lint
 docker compose up --build      # first build takes several minutes
 # open http://localhost:8000   (live view, faces blurred)
 docker compose down            # stop
+
+docker compose up --build images             # check every photo in data/images with Jev
+# open http://localhost:8001   (annotated results, faces blurred; also saved in data/output)
+docker compose --profile images down         # stop both services
 ```
 
 - The video, camera and mode are set in `command:` in [docker-compose.yml](docker-compose.yml).
+- The `images` service only starts when named, and every start sends 3 crops per person to Jev.
 - `config/`, `calibration/` and `data/` are mounted read-only; `models/` and `logs/` are kept on your PC.
 - `.env` (Jev API key) is passed in at run time and never copied into the image; neither are videos or site data.
 - The port is published to this PC only (`127.0.0.1`). Use `"8000:8000"` to allow other PCs on the network.
@@ -79,8 +88,9 @@ CI never uses real factory footage. A Docker image build and publish step (CD) i
 
 On first run the pose model (`yolov8n-pose.pt`) and the face model (YuNet, checksum-verified) are
 downloaded into `models/`, and the pose model is converted to OpenVINO format once. In the preview,
-a yellow box marks the shoes (found from the ankles); an orange box means the ankles were hidden and
-the bottom of the person's box was used instead.
+a green box marks each person and a blue box the area checked for the hard hat (it stops above the
+eyebrows). A yellow box marks the shoes (found from the ankles); an orange box means the ankles were
+hidden and the bottom of the person's box was used instead.
 
 **Speed:** video files are analysed frame by frame, so on a slow PC they play in slow motion.
 `--realtime` plays them at real speed and skips frames instead, exactly like a live camera.
@@ -149,6 +159,12 @@ saves the 3 crops to `data/jev_check/` so you can see exactly what is sent, and 
 (no retries), printing the answer, confidence, time, tokens used and request id. Without a key, or with
 `--dry-run`, it only saves the crops. Use stock or consented footage only.
 
+**Checking photos:** `python tools/check_images.py --source data/images --jev` asks Jev about every
+person in every photo and writes the answers on the annotated copy in `data/output/`, e.g.
+`HAT yes 0.92` (green = confident yes, red = confident no, orange = unclear or below
+`min_confidence`), followed by the gate result: ALL PPE OK, MISSING PPE or CHECK AGAIN.
+Without `--jev` nothing is sent.
+
 ## Project layout
 
 ```
@@ -171,6 +187,7 @@ safety/layout.py           build / save machine layouts from clicked points, zon
 tools/calibrate.py         interactive camera calibration
 tools/draw_machines.py     click machine areas on the image -> config/machines.yaml
 tools/jev_check.py         one-off Jev test with a single person's crops
+tools/check_images.py      annotated photos with boxes, PPE crops and (with --jev) Jev's answers
 safety/webview.py          browser preview (MJPEG) for Docker / no screen
 Dockerfile, docker-compose.yml   local container setup
 config/settings.yaml       general settings (committed)
