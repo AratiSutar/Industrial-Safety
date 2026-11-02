@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from safety.alerts import Level
+from safety.crops import head_region
 from safety.detector import L_ANKLE, R_ANKLE, Box, Person
 from safety.homography import Calibration
 from safety.inspector import DENY, UNLOCK, Inspection
@@ -16,6 +17,7 @@ YELLOW = (0, 255, 255)
 ORANGE = (0, 140, 255)
 RED = (0, 0, 255)
 AMBER = (0, 191, 255)
+BLUE = (255, 128, 0)
 WHITE = (255, 255, 255)
 GREY = (160, 160, 160)
 
@@ -79,6 +81,9 @@ def draw_people(frame: np.ndarray, people: list[Person],
         # Yellow box = feet found from the ankles, orange = ankles hidden, estimated from the body box
         fx1, fy1, fx2, fy2 = (int(v) for v in feet_box(p, min_conf))
         cv2.rectangle(frame, (fx1, fy1), (fx2, fy2), YELLOW if p.foot_from_ankles else ORANGE, _thick(frame))
+        # Blue box = the area Jev is shown for the hard hat (it stops above the eyebrows)
+        hx1, hy1, hx2, hy2 = (int(v) for v in head_region(p, min_conf))
+        cv2.rectangle(frame, (hx1, hy1), (hx2, hy2), BLUE, _thick(frame))
     return frame
 
 
