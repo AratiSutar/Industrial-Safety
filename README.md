@@ -197,10 +197,10 @@ models/                    model weights (not committed)
 
 ## Roadmap
 
-1. ✅ Project skeleton
-2. ✅ Pose tracking and ankle point (YOLOv8n-pose)
-3. ✅ Camera calibration, floor distance, live-camera fix, background Jev inspector
-4. ✅ Proximity alert levels (WARN / ALERT / ALARM), per-machine outputs, event log
+1. Project skeleton
+2. Pose tracking and ankle point (YOLOv8n-pose)
+3. Camera calibration, floor distance, live-camera fix, background Jev inspector
+4. Proximity alert levels (WARN / ALERT / ALARM), per-machine outputs, event log
 5. Operator screen and event log
 6. Gate: local safety-glasses check, test with real Jev API key
-7. ✅ Docker (local) — CD (image published to GitHub Container Registry) still to do
+7. Docker (local) — CD (image published to GitHub Container Registry) still to do
