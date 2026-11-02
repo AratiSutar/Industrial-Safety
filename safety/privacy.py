@@ -94,7 +94,10 @@ class FaceDetector:
         _, faces = self._det.detect(small)
         boxes = []
         for f in faces if faces is not None else []:
-            x, y, fw, fh = (float(v) / scale for v in f[:4])
+            x, y, fw, fh, _, right_eye_y, _, left_eye_y = (float(v) / scale for v in f[:8])
             px, py = fw * self.pad, fh * self.pad
-            boxes.append((x - px, y - py, x + fw + px, y + fh + py))
+            # Upwards, stop just above the eyes like face_box, so a hard hat stays visible;
+            # padding the top too blurred the whole head of a worker looking down
+            top = max(y - py, min(right_eye_y, left_eye_y) - fh * 0.2)
+            boxes.append((x - px, top, x + fw + px, y + fh + py))
         return boxes

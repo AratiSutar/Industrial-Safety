@@ -28,13 +28,25 @@ from safety.video import open_source  # noqa: E402
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--source", required=True, help="image, video file or camera")
+    parser.add_argument("--source", help="image, video file or camera")
+    parser.add_argument("--list-models", action="store_true", help="only show which Jev models your key can use")
     parser.add_argument("--frame", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true", help="save the crops but don't call Jev")
     parser.add_argument("--out-dir", default="data/jev_check", help="where to save the crops (git-ignored)")
     args = parser.parse_args()
 
     settings = load_settings()
+    if args.list_models:
+        if not settings.typesafe_api_key:
+            sys.exit("No TYPESAFE_API_KEY in .env")
+        from typesafe_sdk import TypeSafeClient
+
+        with TypeSafeClient(api_key=settings.typesafe_api_key) as client:
+            print(client.models.list())
+        print(f"settings.yaml uses: {settings.jev.model}")
+        return
+    if not args.source:
+        parser.error("--source is required (or use --list-models)")
     if Path(args.source).suffix.lower() in (".jpg", ".jpeg", ".png", ".bmp", ".webp"):
         frame = cv2.imread(args.source)
         if frame is None:
