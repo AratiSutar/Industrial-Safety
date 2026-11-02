@@ -115,6 +115,7 @@ def main() -> None:
         blurred = blur_faces(frame, people, s.min_keypoint_conf, face_boxes)
 
         view = draw_people(blurred.copy(), people, min_conf=s.min_keypoint_conf)
+        print(f"{path.name}: {len(people)} people")
         if checker is not None:
             for i, p in enumerate(people, start=1):
                 crops = ppe_crops(blurred, p, s.min_keypoint_conf)
@@ -131,8 +132,7 @@ def main() -> None:
         cv2.imwrite(str(out), view, [cv2.IMWRITE_JPEG_QUALITY, 90])
 
         ankles = sum(p.foot_from_ankles for p in people)
-        print(f"{path.name}: {len(people)} people ({ankles} with ankles visible), "
-              f"{len(face_boxes)} faces found by the face detector -> {out}")
+        print(f"  {ankles} with ankles visible, {len(face_boxes)} faces found by the face detector -> {out}")
 
         if args.show:
             h = min(view.shape[0], 1000)  # fit on a laptop screen

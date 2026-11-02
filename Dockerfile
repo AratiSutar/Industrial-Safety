@@ -21,6 +21,7 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY safety/ safety/
+COPY tools/ tools/
 COPY main.py .
 COPY config/settings.yaml config/settings.yaml
 

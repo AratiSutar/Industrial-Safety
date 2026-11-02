@@ -1,6 +1,8 @@
 # Run the monitor locally in Docker:
 #   docker compose up --build        then open http://localhost:8000
 #   docker compose down              to stop
+# Or check the photos in data/images with Jev and see the results:
+#   docker compose up --build images then open http://localhost:8001
 # Change the video, camera or mode in `command` below. Webcams can't be used inside Docker on
 # Windows; use a video file or a network camera (rtsp://...) instead.
 services:
@@ -21,3 +23,24 @@ services:
       - ./models:/app/models                 # model download + OpenVINO export, kept between runs
       - ./logs:/app/logs                     # event log (text only)
     restart: unless-stopped
+
+  # Still photos: tools/check_images.py --jev on every image in data/images, then the annotated
+  # results (faces blurred) are listed at http://localhost:8001 and saved in data/output.
+  # Only started when named: `docker compose up images`. Every start sends 3 crops per person to Jev.
+  images:
+    profiles: ["images"]
+    build: .
+    image: industrial-safety:local
+    entrypoint: ["sh", "-c", "python tools/check_images.py --source data/images --out-dir /app/output --jev
+                  && python -m http.server 8001 --directory /app/output"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./config:/app/config:ro
+      - ./data/images:/app/data/images:ro
+      - ./data/output:/app/output            # the annotated images, also kept on your PC
+      - ./models:/app/models
+    restart: "no"
