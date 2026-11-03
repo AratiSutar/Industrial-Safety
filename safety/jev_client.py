@@ -33,6 +33,7 @@ class PpeAnswer:
     confidence: float
     latency_s: float = 0.0
     error: str | None = None
+    input_tokens: int | None = None  # billable Jev input tokens; None for the local model or when not reported
 
 
 class PpeChecker(Protocol):
@@ -71,7 +72,8 @@ class JevPpeClient:
                 {item: Choice(instructions=QUESTIONS[item], criteria=CRITERIA)},
             )
             answer = result.choices[item]
-            return PpeAnswer(item, answer.choice, float(answer.confidence), time.perf_counter() - start)
+            return PpeAnswer(item, answer.choice, float(answer.confidence), time.perf_counter() - start,
+                             input_tokens=result.usage.input_tokens)
         except (TypeSafeError, KeyError) as e:
             # Any failure counts as "error", which keeps the gate locked
             return PpeAnswer(item, "error", 0.0, time.perf_counter() - start, f"{type(e).__name__}: {e}")

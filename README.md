@@ -50,6 +50,10 @@ python tools/jev_check.py --source video.mp4 --frame 300   # one-off Jev test (s
 python tools/jev_check.py --list-models    # which Jev models your API key can use
 python tools/check_images.py --source data/images          # boxes + PPE crops for every photo
 python tools/check_images.py --source data/images --jev    # ...and Jev's answers written on each person
+python main.py --engine local_ml           # PPE checks with the local YOLO model instead of Jev
+python tools/compare_engines.py            # benchmark Jev vs the local model on data/eval (see below)
+python tools/post_figures.py --jev-usd-per-mtok 0.5   # results table + cost graph from that benchmark
+python main.py --source video.mp4 --record recordings/demo.mp4   # save the blurred, annotated view
 python tools/calibrate.py --camera cam_floor_1 --source 0   # calibrate a camera (see below)
 python -m pytest                           # tests
 ruff check .                               # lint
@@ -165,6 +169,56 @@ person in every photo and writes the answers on the annotated copy in `data/outp
 `min_confidence`), followed by the gate result: ALL PPE OK, MISSING PPE or CHECK AGAIN.
 Without `--jev` nothing is sent.
 
+## Comparing PPE engines (Jev vs a local model)
+
+`inspection.engine` in `config/settings.yaml` picks who answers the PPE questions:
+`jev_vlm` (TypeSafe Jev, default) or `local_ml` (a YOLO detector trained on PPE classes, run on this PC;
+no network, no per-check cost). `main.py --engine local_ml` overrides it for one run. Both get the same
+face-blurred crops and the same fail-closed gate; only `min_confidence` is set per engine
+(`jev.min_confidence`, `local_ml.min_confidence`), because their scores run differently.
+
+**Local model:** put any YOLO detection weights trained on PPE at `models/yolov8n-ppe.pt` (not committed;
+Ultralytics AGPL-3.0 applies, and check the training dataset's licence). Run
+`python tools/compare_engines.py --list-classes` to see its class names and set which mean
+present / missing in `local_ml.classes`. An item with no class (many PPE datasets have no boots)
+is always answered "unclear", so the gate never unlocks on it. Nothing detected also counts as "unclear", never "no".
+
+**Benchmark:** put consented or stock photos of one worker each in `data/eval/` (git-ignored) with
+`data/eval/labels.csv`:
+
+```
+image,hat,vest,boots
+worker_001.jpg,yes,yes,no
+worker_002.jpg,yes,unclear,yes
+```
+
+`unclear` = a person can't tell either (reported, not scored); empty = not labelled. Then
+`python tools/compare_engines.py` (or `--engines local_ml` to send nothing) runs both engines on every
+photo, prints a summary and writes `data/output/compare_report.json`:
+
+| Metric | Meaning |
+|---|---|
+| `accuracy` | correct confident answers / labelled items; unclear counts as wrong |
+| `accuracy_when_answered` | correct / confident answers |
+| `false_positive_rate` | item missing but the engine said present: the dangerous error |
+| `false_negative_rate` | item present but the engine said missing (worker stopped for nothing) |
+| `unclear_rate` | unclear, error or below `min_confidence` (gate stays locked) |
+| `gate.false_unlocks` | people with missing PPE the gate would have let in |
+| `latency` | per call (p50 / p95 / max), Jev including the network |
+
+Results are given overall, per item and per photo, so disagreements can be looked at one by one.
+Photos where no person is found are skipped for both engines. The live pipeline sends Jev's 3 calls
+in parallel, so a gate check takes about the slowest call, not the sum. Jev's billable input tokens are
+counted per call and per worker check (`tokens`).
+
+**Table and cost graph:** `python tools/post_figures.py --jev-usd-per-mtok <price>` reads the report and
+writes `data/output/post_results_table.png` and `post_cost.png`, and prints the numbers. Cost is running
+cost per day: Jev = checks x measured tokens x price; local = `--pc-usd` over `--pc-years` plus
+`--extra-watts`. Both default to 0, because the same PC already runs pose tracking.
+
+**Demo video:** `python main.py --source video.mp4 --record recordings/demo.mp4` saves the annotated,
+face-blurred view (git-ignored). Only use stock or consented footage.
+
 ## Project layout
 
 ```
@@ -178,7 +232,10 @@ safety/homography.py       Block 2: pixels -> floor meters, per-camera calibrati
 safety/zones.py            distance from a person to the nearest machine area
 safety/crops.py            per-item PPE crops sized for Jev (280-1568 px), no faces
 safety/jev_client.py       Block 3: TypeSafe Jev client (+ offline fake)
-safety/inspector.py        background Jev checks and the fail-closed gate decision
+safety/inspector.py        background PPE checks and the fail-closed gate decision
+safety/engines.py          picks the PPE engine (inspection.engine: jev_vlm or local_ml)
+safety/local_ppe.py        local YOLO PPE detector, same interface as the Jev client
+safety/evaluation.py       labels.csv loading and the engine comparison metrics
 safety/gate.py             detects when a person is standing still in the gate box
 safety/alerts.py           WARN / ALERT / ALARM rules, anti-flicker, incidents
 safety/outputs.py          lights, projector, voice, radios, operator screen (simulated adapters)
@@ -188,6 +245,8 @@ tools/calibrate.py         interactive camera calibration
 tools/draw_machines.py     click machine areas on the image -> config/machines.yaml
 tools/jev_check.py         one-off Jev test with a single person's crops
 tools/check_images.py      annotated photos with boxes, PPE crops and (with --jev) Jev's answers
+tools/compare_engines.py   benchmark Jev vs the local model on labelled photos -> JSON report
+tools/post_figures.py      results table + cost-per-day graph (PNG) from that report
 safety/webview.py          browser preview (MJPEG) for Docker / no screen
 Dockerfile, docker-compose.yml   local container setup
 config/settings.yaml       general settings (committed)

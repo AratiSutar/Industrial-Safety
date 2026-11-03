@@ -11,6 +11,16 @@ MODES = ("GATE", "FACTORY")
 RUNNING_SOURCES = ("always", "motion", "plc")
 BACKENDS = ("openvino", "pytorch")
 JEV_ITEMS = ("hard_hat", "vest", "boots")  # safety glasses are checked locally, never sent out
+ENGINES = ("jev_vlm", "local_ml")          # PPE inspection: TypeSafe Jev (cloud) or a YOLO PPE model on this PC
+
+# Local model class names meaning the item is present / missing, for common public PPE datasets.
+# Matched ignoring case, spaces, '-' and '_' ('NO-Hardhat' = 'no_hardhat'). Not "yes"/"no":
+# YAML would read those keys as true/false.
+DEFAULT_LOCAL_CLASSES = {
+    "hard_hat": {"present": ("hardhat", "helmet"), "missing": ("no-hardhat", "no-helmet")},
+    "vest": {"present": ("safety vest", "vest"), "missing": ("no-safety vest", "no-vest")},
+    "boots": {"present": ("boots", "safety boots"), "missing": ("no-boots",)},
+}
 
 ALERT_LEVELS = ("WARN", "ALERT", "ALARM")
 OUTPUT_TYPES = (
@@ -87,6 +97,15 @@ class JevSettings:
 
 
 @dataclass
+class LocalMlSettings:
+    weights: str = "models/yolov8n-ppe.pt"  # not committed; any YOLO detection model with PPE classes
+    imgsz: int = 320
+    min_detection_conf: float = 0.25        # detections below this are ignored
+    min_confidence: float = 0.5             # gate threshold for this engine (YOLO scores run lower than Jev's)
+    classes: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=lambda: dict(DEFAULT_LOCAL_CLASSES))
+
+
+@dataclass
 class Settings:
     mode: str
     video_source: str
@@ -108,6 +127,8 @@ class Settings:
     gate: GateSettings
     jev: JevSettings
     alerts: AlertSettings = field(default_factory=AlertSettings)
+    engine: str = "jev_vlm"                 # which PPE inspection engine the pipeline uses
+    local_ml: LocalMlSettings = field(default_factory=LocalMlSettings)
     typesafe_api_key: str | None = None
     machines: list[Machine] = field(default_factory=list)
 
@@ -198,6 +219,37 @@ def _parse_jev(raw: dict) -> JevSettings:
     )
 
 
+def _parse_engine(raw: dict) -> str:
+    engine = str(raw.get("engine", "jev_vlm")).lower()
+    if engine not in ENGINES:
+        raise ConfigError(f"inspection.engine must be one of {ENGINES}, got {engine!r}")
+    return engine
+
+
+def _parse_local_ml(raw: dict) -> LocalMlSettings:
+    defaults = LocalMlSettings()
+    classes = raw.get("classes", defaults.classes)
+    unknown = set(classes) - set(JEV_ITEMS)
+    if unknown:
+        raise ConfigError(f"local_ml.classes: unknown items {sorted(unknown)}; allowed {JEV_ITEMS}")
+    try:
+        s = LocalMlSettings(
+            weights=str(raw.get("weights", defaults.weights)),
+            imgsz=int(raw.get("imgsz", defaults.imgsz)),
+            min_detection_conf=float(raw.get("min_detection_conf", defaults.min_detection_conf)),
+            min_confidence=float(raw.get("min_confidence", defaults.min_confidence)),
+            classes={item: {side: tuple(str(n) for n in (names or {}).get(side) or ())
+                            for side in ("present", "missing")}
+                     for item, names in classes.items()},
+        )
+    except (AttributeError, TypeError, ValueError) as e:
+        raise ConfigError(f"local_ml: {e}") from e
+    for name in ("min_detection_conf", "min_confidence"):
+        if not 0 <= getattr(s, name) <= 1:
+            raise ConfigError(f"local_ml.{name} must be between 0 and 1")
+    return s
+
+
 def _parse_alerts(raw: dict) -> AlertSettings:
     defaults = AlertSettings()
     unknown = set(raw) - set(defaults.__dataclass_fields__)
@@ -256,6 +308,8 @@ def load_settings(config_dir: Path = Path("config"), env_file: Path = Path(".env
         gate=_parse_gate(raw.get("gate", {})),
         jev=_parse_jev(raw.get("jev", {})),
         alerts=_parse_alerts(raw.get("alerts", {})),
+        engine=_parse_engine(raw.get("inspection", {})),
+        local_ml=_parse_local_ml(raw.get("local_ml", {})),
         typesafe_api_key=os.getenv("TYPESAFE_API_KEY") or None,
         machines=load_machines(config_dir / "machines.yaml"),
     )

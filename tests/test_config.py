@@ -33,6 +33,24 @@ def test_danger_must_be_smaller_than_warn(tmp_path):
         load_machines(bad)
 
 
+def test_inspection_engine_defaults_to_jev_and_local_ml_settings_load():
+    s = load_settings(ROOT / "config", env_file=ROOT / "missing.env")
+    assert s.engine == "jev_vlm"
+    assert set(s.local_ml.classes) == {"hard_hat", "vest", "boots"}
+    assert "no-hardhat" in s.local_ml.classes["hard_hat"]["missing"]
+
+
+@pytest.mark.parametrize("yaml_text", [
+    "inspection:\n  engine: gpt\n",
+    "local_ml:\n  classes:\n    gloves: {present: [gloves]}\n",
+    "local_ml:\n  min_confidence: 2\n",
+])
+def test_invalid_engine_settings_are_rejected(tmp_path, yaml_text):
+    (tmp_path / "settings.yaml").write_text(yaml_text, encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_settings(tmp_path, env_file=tmp_path / "missing.env")
+
+
 def test_jev_latest_is_rejected(tmp_path):
     (tmp_path / "settings.yaml").write_text("jev:\n  model: jev-latest\n", encoding="utf-8")
     with pytest.raises(ConfigError):

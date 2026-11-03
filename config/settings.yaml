@@ -44,6 +44,20 @@ gate:
   still_seconds: 0.5
   still_tolerance: 0.05           # max foot movement while "still", as a fraction of body height
 
+inspection:
+  engine: jev_vlm        # PPE checks: jev_vlm (TypeSafe Jev, cloud) or local_ml (YOLO PPE model on this PC)
+                         # compare them first with tools/compare_engines.py
+
+local_ml:                # only used when engine is local_ml (or in tools/compare_engines.py)
+  weights: models/yolov8n-ppe.pt   # not committed; any YOLO detection model trained on PPE classes
+  imgsz: 320
+  min_detection_conf: 0.25         # detections below this are ignored
+  min_confidence: 0.5              # below this an answer counts as unclear (YOLO scores run lower than Jev's)
+  classes:               # model class names meaning present / missing (case, '-', '_' and spaces ignored)
+    hard_hat: {present: [hardhat, helmet], missing: [no-hardhat, no-helmet]}
+    vest: {present: [safety vest, vest], missing: [no-safety vest, no-vest]}
+    boots: {present: [boots, safety boots], missing: [no-boots]}   # many PPE datasets have no boots class
+
 jev:
   model: jev-1.14.0      # pinned; never use jev-latest
   timeout_s: 2.0

@@ -1,4 +1,4 @@
-"""Orchestrator: tracking -> floor distance -> proximity alerts, plus background Jev PPE checks."""
+"""Orchestrator: tracking -> floor distance -> proximity alerts, plus background PPE checks (Jev or local)."""
 
 import argparse
 import time
@@ -12,10 +12,10 @@ from safety.config import load_settings
 from safety.crops import ppe_crops
 from safety.detector import PoseTracker
 from safety.display import draw_banner, draw_gate_box, draw_machines, draw_people
+from safety.engines import EngineUnavailable, make_engine
 from safety.events import EventLog
 from safety.gate import GateWatcher
 from safety.inspector import AsyncInspector, Inspection
-from safety.jev_client import FakePpeClient, JevPpeClient
 from safety.outputs import OutputRouter
 from safety.privacy import FaceDetector, blur_faces
 from safety.video import frames, is_live
@@ -32,7 +32,7 @@ def describe(ins: Inspection) -> str:
         if a.error:
             text += f"[{a.error}]"
         parts.append(text)
-    return f"Jev #{ins.track_id}: {ins.decision} after {ins.latency_s:.2f}s  " + " ".join(parts)
+    return f"PPE #{ins.track_id}: {ins.decision} after {ins.latency_s:.2f}s  " + " ".join(parts)
 
 
 def main() -> None:
@@ -51,6 +51,9 @@ def main() -> None:
                         help="video files: play at real speed like a live camera, skipping frames as needed")
     parser.add_argument("--fake-jev", action="store_true",
                         help="offline Jev stand-in (always 'unclear', never unlocks) to test the pipeline")
+    parser.add_argument("--engine", choices=("jev_vlm", "local_ml"), help="override inspection.engine")
+    parser.add_argument("--record", metavar="FILE.mp4",
+                        help="save the annotated, face-blurred view as a video (demos; keep it out of git)")
     args = parser.parse_args()
 
     settings = load_settings(Path(args.config_dir))
@@ -76,23 +79,20 @@ def main() -> None:
         print(f"Floor distance: ON | calibration error {100 * cal.error_m:.1f} cm | "
               f"{len(zones.machines)} machines on this camera")
 
-    # Block 3: Jev, in background threads
+    # Block 3: PPE checks (Jev or the local model, see inspection.engine), in background threads
     inspector = None
-    if args.fake_jev:
-        checker = FakePpeClient()
-        print("Jev: FAKE client (offline test, always 'unclear')")
-    elif settings.typesafe_api_key:
-        checker = JevPpeClient(settings.typesafe_api_key, settings.jev.model, settings.jev.timeout_s)
-        print(f"Jev: {settings.jev.model} | items: {', '.join(settings.jev.required_items)}")
-    else:
-        checker = None
-        print("Jev: OFF (TYPESAFE_API_KEY not set; use --fake-jev to test offline)")
-    if checker is not None:
+    try:
+        engine = make_engine(args.engine or settings.engine, settings, fake_jev=args.fake_jev)
+        print(f"PPE: {engine.label} | items: {', '.join(settings.jev.required_items)}")
+    except EngineUnavailable as e:
+        engine = None
+        print(f"PPE: OFF ({e})")
+    if engine is not None:
         cooldown = 10.0 if mode == "GATE" else settings.jev.recheck_s
         if mode == "FACTORY" and cooldown <= 0:
-            print("Jev: factory re-checks disabled (jev.recheck_s = 0)")
+            print("PPE: factory re-checks disabled (jev.recheck_s = 0)")
         else:
-            inspector = AsyncInspector(checker, settings.jev.required_items, settings.jev.min_confidence,
+            inspector = AsyncInspector(engine.checker, settings.jev.required_items, engine.min_confidence,
                                        settings.jev.timeout_s, settings.jev.max_workers, cooldown)
 
     tracker = PoseTracker(settings.pose_weights, settings.imgsz, settings.device, backend,
@@ -136,9 +136,10 @@ def main() -> None:
                 return
             print("Video ended, starting again (--loop)")
 
+    recorder = None  # opened on the first frame, when the size is known
     processed = 0
     infer_s = loop_s = 0.0
-    last_ppe: dict[int | None, Inspection] = {}  # latest Jev result per person, for the display
+    last_ppe: dict[int | None, Inspection] = {}  # latest PPE result per person, for the display
     try:
         for index, frame in video():
             t0 = time.perf_counter()
@@ -192,14 +193,14 @@ def main() -> None:
                        if p.track_id in nearest else f"@({p.foot[0]:.0f},{p.foot[1]:.0f})")
                     + ("" if p.foot_from_ankles else "*")
                     for p in people)
-                jev = f" | Jev pending {inspector.pending}" if inspector else ""
+                jev = f" | PPE pending {inspector.pending}" if inspector else ""
                 print(f"frame {index}: {len(people)} people {feet}  "
                       f"[{1000 * loop_s / processed:.0f} ms/frame{jev}]")
                 # Forget results for people no longer in view
                 current = {p.track_id for p in people}
                 last_ppe = {tid: ins for tid, ins in last_ppe.items() if tid in current}
 
-            if args.show or web is not None:
+            if args.show or web is not None or args.record:
                 view = draw_people(blurred.copy(), people, nearest, last_ppe, settings.min_keypoint_conf)
                 if cal is not None:
                     draw_machines(view, cal, zones.machines, {m.id: alerts.level(m.id) for m in zones.machines})
@@ -208,6 +209,16 @@ def main() -> None:
                 draw_banner(view, list(announcements.values()))
                 if web is not None:
                     web.publish(view)
+                if args.record:
+                    if recorder is None:
+                        # Played back at the analysis rate, so it looks like what the system saw
+                        Path(args.record).parent.mkdir(parents=True, exist_ok=True)
+                        recorder = cv2.VideoWriter(args.record, cv2.VideoWriter_fourcc(*"mp4v"),
+                                                   settings.alerts.expected_fps, (view.shape[1], view.shape[0]))
+                        if not recorder.isOpened():
+                            raise RuntimeError(f"could not write video {args.record}")
+                        print(f"Recording the blurred view to {args.record}")
+                    recorder.write(view)
 
             if args.show:
                 cv2.imshow("Industrial Safety (q = quit, a = operator announced)", view)
@@ -231,6 +242,8 @@ def main() -> None:
                 time.sleep(0.05)
             inspector.close()
         events.write(alerts.close_all())
+        if recorder is not None:
+            recorder.release()
         if web is not None:
             web.close()
         if args.show:
