@@ -10,7 +10,7 @@ Cost per day, running costs only:
     local: share of the PC price (--pc-usd over --pc-years) + extra power for the PPE model (--extra-watts).
            Both default to 0: the same PC already runs pose tracking, so the PPE model adds CPU time, not a machine.
 
-Writes data/output/post_results_table.png and data/output/post_cost.png (git-ignored) and prints the
+Writes data/output/post_results_table.png, post_comparison.png and post_cost.png (git-ignored) and prints the
 numbers to fill in. Only measured numbers are used: no price, no cost graph.
 """
 
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from safety.evaluation import break_even_checks, usd_per_check  # noqa: E402
 
-NAMES = {"jev_vlm": "Jev (VLM, no training)", "local_ml": "Local YOLO (pretrained)"}
+NAMES = {"jev_vlm": "Jev (VLM, no training)", "local_ml": "Off-the-shelf detector (YOLOv8s)"}
 COLORS = {"jev_vlm": "#2a78d6", "local_ml": "#eb6834"}  # categorical slots 1 and 2
 INK, MUTED, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 
@@ -101,6 +101,60 @@ def draw_table(report: dict, usd_per_mtok: float | None, out: Path) -> None:
     plt.close(fig)
 
 
+def comparison_rows(report: dict) -> list[tuple[str, dict[str, tuple[float, str]]]]:
+    """Metric label -> {engine: (share 0-1, 'part of whole')}, for the side-by-side bar chart."""
+    def share(part: int, whole: int) -> tuple[float, str]:
+        return (part / whole if whole else 0.0), f"{part} of {whole}"
+
+    rows: list[tuple[str, dict[str, tuple[float, str]]]] = []
+    specs = [
+        ("Right answers", lambda o, g: (o["confusion"]["yes"]["yes"] + o["confusion"]["no"]["no"], o["labelled"])),
+        ("Right gate decisions", lambda o, g: (round((g["accuracy"] or 0) * g["people"]), g["people"])),
+        ("Unclear answers (gate stays shut)\nlower is better",
+         lambda o, g: (sum(o["confusion"][label]["unclear"] for label in ("yes", "no")), o["labelled"])),
+        ('False "yes" on missing gear\nlower is better',
+         lambda o, g: (o["confusion"]["no"]["yes"], o["labelled_missing"])),
+        ("Workers with missing gear let in\nlower is better",
+         lambda o, g: (g["false_unlocks"], g["people_missing_ppe"])),
+    ]
+    for label, counts in specs:
+        rows.append((label, {name: share(*counts(r["overall"], r["gate"])) for name, r in report["engines"].items()}))
+    return rows
+
+
+def draw_comparison(report: dict, out: Path) -> None:
+    plt = pyplot()
+    rows = comparison_rows(report)
+    names = list(report["engines"])
+    height = 0.8 / len(names)
+    fig, ax = plt.subplots(figsize=(10, 1.15 * len(rows) + 1.2), facecolor=SURFACE)
+    ax.set_facecolor(SURFACE)
+    for i, (_, values) in enumerate(rows):
+        for j, name in enumerate(names):
+            share, text = values[name]
+            y = i + (j - (len(names) - 1) / 2) * height
+            ax.barh(y, share, height=height * 0.85, color=COLORS.get(name, MUTED),
+                    label=NAMES.get(name, name) if i == 0 else None)
+            ax.annotate(f"{100 * share:.0f}%  ({text})", (share, y), xytext=(6, 0), textcoords="offset points",
+                        va="center", color=INK, fontsize=10)
+    ax.set_yticks(range(len(rows)), [label for label, _ in rows], color=INK, fontsize=11)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 1.25)
+    ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0], ["0%", "25%", "50%", "75%", "100%"])
+    ax.tick_params(colors=MUTED, length=0)
+    ax.grid(axis="x", color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    for side in ("top", "right", "bottom"):
+        ax.spines[side].set_visible(False)
+    ax.spines["left"].set_color(GRID)
+    ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.4, 1.0), ncol=len(names), labelcolor=INK,
+              fontsize=11)
+    ax.set_title(f"Same {report['dataset']['evaluated']} photos, same blurred crops", color=MUTED, fontsize=11,
+                 loc="left", pad=34)
+    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor=SURFACE)
+    plt.close(fig)
+
+
 def draw_cost(jev_per_check: float, local_per_day: float, out: Path) -> float | None:
     plt = pyplot()
     even = break_even_checks(local_per_day, jev_per_check)
@@ -157,6 +211,9 @@ def main() -> None:
     table = out_dir / "post_results_table.png"
     draw_table(report, args.jev_usd_per_mtok, table)
     print(f"Results table: {table}")
+    comparison = out_dir / "post_comparison.png"
+    draw_comparison(report, comparison)
+    print(f"Comparison chart: {comparison}")
 
     labels, columns = table_rows(report, args.jev_usd_per_mtok)
     for name, col in columns.items():
