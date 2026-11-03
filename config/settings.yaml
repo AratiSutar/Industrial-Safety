@@ -49,8 +49,8 @@ inspection:
                          # compare them first with tools/compare_engines.py
 
 local_ml:                # only used when engine is local_ml (or in tools/compare_engines.py)
-  weights: models/yolov8n-ppe.pt   # not committed; any YOLO detection model trained on PPE classes
-  imgsz: 320
+  weights: models/construction-ppe-yolov8s.pt   # not committed; Hugging Face killuminati1/construction-ppe-yolov8 (Apache-2.0)
+  imgsz: 640                       # the size it was trained at
   min_detection_conf: 0.25         # detections below this are ignored
   min_confidence: 0.5              # below this an answer counts as unclear (YOLO scores run lower than Jev's)
   classes:               # model class names meaning present / missing (case, '-', '_' and spaces ignored)

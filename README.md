@@ -177,8 +177,11 @@ no network, no per-check cost). `main.py --engine local_ml` overrides it for one
 face-blurred crops and the same fail-closed gate; only `min_confidence` is set per engine
 (`jev.min_confidence`, `local_ml.min_confidence`), because their scores run differently.
 
-**Local model:** put any YOLO detection weights trained on PPE at `models/yolov8n-ppe.pt` (not committed;
-Ultralytics AGPL-3.0 applies, and check the training dataset's licence). Run
+**Local model:** any YOLO detection weights trained on PPE, at `local_ml.weights` (not committed;
+Ultralytics AGPL-3.0 applies, and check the training dataset's licence). Tested with
+[killuminati1/construction-ppe-yolov8](https://huggingface.co/killuminati1/construction-ppe-yolov8)
+(YOLOv8s, Apache-2.0, has present / missing classes for hat, vest and boots): download its `best.pt` to
+`models/construction-ppe-yolov8s.pt`. It was trained on construction sites and saw little on factory photos. Run
 `python tools/compare_engines.py --list-classes` to see its class names and set which mean
 present / missing in `local_ml.classes`. An item with no class (many PPE datasets have no boots)
 is always answered "unclear", so the gate never unlocks on it. Nothing detected also counts as "unclear", never "no".

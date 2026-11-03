@@ -98,8 +98,8 @@ class JevSettings:
 
 @dataclass
 class LocalMlSettings:
-    weights: str = "models/yolov8n-ppe.pt"  # not committed; any YOLO detection model with PPE classes
-    imgsz: int = 320
+    weights: str = "models/construction-ppe-yolov8s.pt"  # not committed; any YOLO detection model with PPE classes
+    imgsz: int = 640
     min_detection_conf: float = 0.25        # detections below this are ignored
     min_confidence: float = 0.5             # gate threshold for this engine (YOLO scores run lower than Jev's)
     classes: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=lambda: dict(DEFAULT_LOCAL_CLASSES))
